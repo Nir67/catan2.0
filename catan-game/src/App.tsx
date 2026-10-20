@@ -1,11 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { socket } from "./socket";
 import woodImage from "./assets/wood.png";
 import sheepImage from "./assets/sheep.png";
 import wheatImage from "./assets/wheat.png";
 import brickImage from "./assets/brick.png";
 import stoneImage from "./assets/stone.png";
 import desertImage from "./assets/dessert.png";
+
+type Player = {
+  id: string;
+  name: string;
+};
+
+type RoomResponse = {
+  success: boolean;
+  roomCode?: string;
+  players?: Player[];
+  message?: string;
+};
 
 type Resource =
   | "wood"
@@ -399,7 +412,434 @@ function StartScreen({
     </div>
   );
 }
+function HomeScreen({
+  onEnterLobby,
+  onBack,
+}: {
+  onEnterLobby: (
+    roomCode: string,
+    playerName: string,
+    players: Player[]
+  ) => void;
+  onBack: () => void;
+}) {
+  const [playerName, setPlayerName] = useState("");
+  const [roomCode, setRoomCode] = useState("");
+  const [error, setError] = useState("");
 
+  function createRoom() {
+    const name = playerName.trim();
+
+    if (!name) {
+      setError("צריך לכתוב שם");
+      return;
+    }
+
+    setError("");
+
+    socket.emit(
+      "create-room",
+      name,
+      (response: RoomResponse) => {
+        if (
+          !response.success ||
+          !response.roomCode ||
+          !response.players
+        ) {
+          setError(
+            response.message || "לא הצלחנו ליצור חדר"
+          );
+          return;
+        }
+
+        onEnterLobby(
+          response.roomCode,
+          name,
+          response.players
+        );
+      }
+    );
+  }
+
+  function joinRoom() {
+    const name = playerName.trim();
+    const code = roomCode.trim().toUpperCase();
+
+    if (!name) {
+      setError("צריך לכתוב שם");
+      return;
+    }
+
+    if (!code) {
+      setError("צריך לכתוב קוד חדר");
+      return;
+    }
+
+    setError("");
+
+    socket.emit(
+      "join-room",
+      {
+        roomCode: code,
+        playerName: name,
+      },
+      (response: RoomResponse) => {
+        if (
+          !response.success ||
+          !response.roomCode ||
+          !response.players
+        ) {
+          setError(
+            response.message || "לא הצלחנו להצטרף"
+          );
+          return;
+        }
+
+        onEnterLobby(
+          response.roomCode,
+          name,
+          response.players
+        );
+      }
+    );
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "16px",
+      }}
+    >
+      <h1
+        style={{
+          fontSize: "60px",
+          letterSpacing: "8px",
+          margin: 0,
+        }}
+      >
+        CATAN
+      </h1>
+
+      <h2>משחק אונליין</h2>
+
+      <input
+        value={playerName}
+        onChange={(event) =>
+          setPlayerName(event.target.value)
+        }
+        placeholder="השם שלך"
+        style={{
+          width: "240px",
+          padding: "12px",
+          fontSize: "18px",
+          borderRadius: "10px",
+          border: "1px solid #ccc",
+          textAlign: "center",
+        }}
+      />
+
+      <button
+        onClick={createRoom}
+        style={{
+          width: "240px",
+          padding: "14px",
+          fontSize: "18px",
+          fontWeight: "bold",
+          border: "none",
+          borderRadius: "12px",
+          background: "#f2c744",
+          cursor: "pointer",
+        }}
+      >
+        🎮 צור משחק
+      </button>
+
+      <div>או</div>
+
+      <input
+        value={roomCode}
+        onChange={(event) =>
+          setRoomCode(
+            event.target.value.toUpperCase()
+          )
+        }
+        placeholder="קוד חדר"
+        maxLength={4}
+        style={{
+          width: "240px",
+          padding: "12px",
+          fontSize: "20px",
+          borderRadius: "10px",
+          border: "1px solid #ccc",
+          textAlign: "center",
+          textTransform: "uppercase",
+        }}
+      />
+
+      <button
+        onClick={joinRoom}
+        style={{
+          width: "240px",
+          padding: "14px",
+          fontSize: "18px",
+          fontWeight: "bold",
+          border: "none",
+          borderRadius: "12px",
+          background: "white",
+          cursor: "pointer",
+        }}
+      >
+        הצטרף למשחק
+      </button>
+
+      {error && (
+        <div
+          style={{
+            color: "#8b0000",
+            background: "white",
+            padding: "8px 14px",
+            borderRadius: "8px",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <button
+        onClick={onBack}
+        style={{
+          marginTop: "10px",
+          border: "none",
+          background: "transparent",
+          color: "white",
+          cursor: "pointer",
+        }}
+      >
+        ← חזרה
+      </button>
+    </div>
+  );
+}
+function LobbyScreen({
+  roomCode,
+  playerName,
+  initialPlayers,
+  onStart,
+  onBack,
+}: {
+  roomCode: string;
+  playerName: string;
+  initialPlayers: Player[];
+  onStart: () => void;
+  onBack: () => void;
+}) {
+  const [players, setPlayers] =
+    useState<Player[]>(initialPlayers);
+
+  const [error, setError] =
+    useState("");
+
+  const isHost =
+    players[0]?.id === socket.id;
+
+  useEffect(() => {
+  function handlePlayersUpdated(
+    updatedPlayers: Player[]
+  ) {
+    setPlayers(updatedPlayers);
+  }
+
+  function handleGameStarted() {
+    console.log("GAME STARTED EVENT RECEIVED");
+    onStart();
+  }
+
+  socket.on(
+    "players-updated",
+    handlePlayersUpdated
+  );
+
+  socket.on(
+    "game-started",
+    handleGameStarted
+  );
+
+  return () => {
+    socket.off(
+      "players-updated",
+      handlePlayersUpdated
+    );
+
+    socket.off(
+      "game-started",
+      handleGameStarted
+    );
+  };
+}, [onStart]);
+  function startGame() {
+  console.log("START BUTTON CLICKED");
+
+  socket.emit(
+    "start-game",
+    { roomCode },
+    (response: {
+      success: boolean;
+      message?: string;
+    }) => {
+      console.log("SERVER RESPONSE:", response);
+
+      if (!response.success) {
+        setError(
+          response.message || "לא ניתן להתחיל את המשחק"
+        );
+      }
+    }
+  );
+}
+
+  function leaveRoom() {
+    socket.disconnect();
+    socket.connect();
+
+    onBack();
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "18px",
+      }}
+    >
+      <h1>חדר משחק</h1>
+
+      <div
+        style={{
+          background: "white",
+          color: "#222",
+          padding: "15px 30px",
+          borderRadius: "14px",
+          textAlign: "center",
+        }}
+      >
+        <div>קוד החדר</div>
+
+        <div
+          style={{
+            fontSize: "38px",
+            fontWeight: "bold",
+            letterSpacing: "6px",
+          }}
+        >
+          {roomCode}
+        </div>
+      </div>
+
+      <h2>שחקנים</h2>
+
+      {players.map((player, index) => (
+        <div
+          key={player.id}
+          style={{
+            width: "260px",
+            background: "white",
+            color: "#222",
+            padding: "12px 18px",
+            borderRadius: "10px",
+            fontSize: "18px",
+          }}
+        >
+          🟢 {player.name}
+
+          {player.name === playerName
+            ? " (אתה)"
+            : ""}
+
+          {index === 0
+            ? " 👑"
+            : ""}
+        </div>
+      ))}
+
+      {players.length < 2 && (
+        <div>
+          מחכים לשחקן נוסף...
+        </div>
+      )}
+
+      {isHost ? (
+        <button
+          onClick={startGame}
+          disabled={players.length < 2}
+          style={{
+            marginTop: "10px",
+            padding: "14px 35px",
+            border: "none",
+            borderRadius: "12px",
+
+            background:
+              players.length >= 2
+                ? "#f2c744"
+                : "#cccccc",
+
+            fontSize: "19px",
+            fontWeight: "bold",
+
+            cursor:
+              players.length >= 2
+                ? "pointer"
+                : "not-allowed",
+          }}
+        >
+          🎮 התחל משחק
+        </button>
+      ) : (
+        <div
+          style={{
+            fontWeight: "bold",
+          }}
+        >
+          מחכים שיוצר החדר יתחיל את המשחק...
+        </div>
+      )}
+
+      {error && (
+        <div
+          style={{
+            background: "white",
+            color: "#9b0000",
+            padding: "8px 14px",
+            borderRadius: "8px",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <button
+        onClick={leaveRoom}
+        style={{
+          marginTop: "8px",
+          padding: "10px 22px",
+          border: "none",
+          borderRadius: "10px",
+          cursor: "pointer",
+        }}
+      >
+        יציאה מהחדר
+      </button>
+    </div>
+  );
+}
 function GameScreen({
   onBack,
 }: {
@@ -482,44 +922,85 @@ function GameScreen({
     </div>
   );
 }
-
 function App() {
-  const [gameStarted, setGameStarted] =
-    useState(false);
+  const [screen, setScreen] =
+    useState<
+      "start" | "home" | "lobby" | "game"
+    >("start");
+
+  const [roomCode, setRoomCode] =
+    useState("");
+
+  const [playerName, setPlayerName] =
+    useState("");
+
+  const [players, setPlayers] =
+    useState<Player[]>([]);
+
+  function enterLobby(
+    code: string,
+    name: string,
+    roomPlayers: Player[]
+  ) {
+    setRoomCode(code);
+    setPlayerName(name);
+    setPlayers(roomPlayers);
+    setScreen("lobby");
+  }
 
   return (
     <div
       style={{
         width: "100%",
-
         minHeight: "100vh",
-
         margin: 0,
-
         background:
           "linear-gradient(180deg, #70d6ee 0%, #1ca8d1 100%)",
-
         color: "white",
-
         fontFamily:
           "Arial, Helvetica, sans-serif",
       }}
     >
-      {gameStarted ? (
-        <GameScreen
-          onBack={() =>
-            setGameStarted(false)
-          }
-        />
-      ) : (
+      {screen === "start" && (
         <StartScreen
           onStart={() =>
-            setGameStarted(true)
+            setScreen("home")
+          }
+        />
+      )}
+
+      {screen === "home" && (
+        <HomeScreen
+          onEnterLobby={enterLobby}
+          onBack={() =>
+            setScreen("start")
+          }
+        />
+      )}
+
+    {screen === "lobby" && (
+  <LobbyScreen
+    roomCode={roomCode}
+    playerName={playerName}
+    initialPlayers={players}
+    onStart={() =>
+      setScreen("game")
+    }
+    onBack={() =>
+      setScreen("home")
+    }
+  />
+)}
+    
+
+      {screen === "game" && (
+        <GameScreen
+          onBack={() =>
+            setScreen("lobby")
           }
         />
       )}
     </div>
   );
 }
-
 export default App;
