@@ -1,5 +1,8 @@
 import { io } from "socket.io-client";
-
-export const socket = io({
-  autoConnect: true,
-});
+const tokenKey = "catan-session-v2";
+let token = sessionStorage.getItem(tokenKey);
+if (!token) {
+  token = crypto.randomUUID();
+  sessionStorage.setItem(tokenKey, token);
+}
+export const socket = io({ auth: { token }, autoConnect: true });

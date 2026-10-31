@@ -1,1810 +1,1175 @@
 import { useEffect, useState } from "react";
-
 import { socket } from "./socket";
-import woodImage from "./assets/wood.png";
-import sheepImage from "./assets/sheep.png";
-import wheatImage from "./assets/wheat.png";
-import brickImage from "./assets/brick.png";
-import stoneImage from "./assets/stone.png";
-import desertImage from "./assets/dessert.png";
-
+import {
+  COSTS,
+  RESOURCES,
+  VERTICES,
+  EDGES,
+  PORTS,
+  emptyHand,
+  total,
+  canPay,
+} from "../shared/engine.js";
+import type {
+  View,
+  Hand,
+  Resource,
+  Color,
+  DevelopmentType,
+} from "../shared/engine.js";
+import "./App.css";
+import wood from "./assets/wood.png";
+import sheep from "./assets/sheep.png";
+import wheat from "./assets/wheat.png";
+import brick from "./assets/brick.png";
+import stone from "./assets/stone.png";
+import desert from "./assets/dessert.png";
 import roadBlue from "./assets/pieces/road-blue.png";
 import roadRed from "./assets/pieces/road-red.png";
 import roadGreen from "./assets/pieces/road-green.png";
 import roadYellow from "./assets/pieces/road-yellow.png";
-
 import settlementBlue from "./assets/pieces/settlement-blue.png";
 import settlementRed from "./assets/pieces/settlement-red.png";
 import settlementGreen from "./assets/pieces/settlement-green.png";
 import settlementYellow from "./assets/pieces/settlement-yellow.png";
-
 import cityBlue from "./assets/pieces/city-blue.png";
 import cityRed from "./assets/pieces/city-red.png";
 import cityGreen from "./assets/pieces/city-green.png";
 import cityYellow from "./assets/pieces/city-yellow.png";
 
-type Player = {
-  id: string;
-  name: string;
+const names: Record<Resource, string> = {
+  wood: "עץ",
+  brick: "לבנים",
+  sheep: "צמר",
+  wheat: "חיטה",
+  stone: "ברזל",
 };
-
-type GameState = {
-  currentPlayerIndex: number;
-  dice: [number, number];
-  hasRolled: boolean;
-  turnNumber: number;
-
-  // Stored and broadcast by the server.
-  roads?: BuiltRoad[];
-  buildings?: BuiltBuilding[];
+const icons: Record<Resource, string> = {
+  wood: "🌲",
+  brick: "🧱",
+  sheep: "🐑",
+  wheat: "🌾",
+  stone: "⛰️",
 };
-
-type RoomResponse = {
-  success: boolean;
-  roomCode?: string;
-  players?: Player[];
-  message?: string;
+const cardNames: Record<DevelopmentType, string> = {
+  knight: "אביר",
+  victory: "נקודת ניצחון",
+  "road-building": "בניית דרכים",
+  plenty: "שנת שפע",
+  monopoly: "מונופול",
 };
-
-type Resource =
-  | "wood"
-  | "sheep"
-  | "wheat"
-  | "brick"
-  | "stone"
-  | "desert";
-
-type Tile = {
-  resource: Resource;
-  number?: number;
+const resourceImages = { wood, sheep, wheat, brick, stone, desert };
+const pieces = {
+  road: { blue: roadBlue, red: roadRed, green: roadGreen, yellow: roadYellow },
+  settlement: {
+    blue: settlementBlue,
+    red: settlementRed,
+    green: settlementGreen,
+    yellow: settlementYellow,
+  },
+  city: { blue: cityBlue, red: cityRed, green: cityGreen, yellow: cityYellow },
 };
-
-type Point = {
-  x: number;
-  y: number;
+type Build = "road" | "settlement" | "city";
+type Room = {
+  roomCode: string;
+  hostId: string;
+  started: boolean;
+  players: { id: string; name: string; color: Color; online: boolean }[];
 };
+type Action = { type: string; [key: string]: unknown };
+type Reply = { success: boolean; message?: string; playerId?: string };
+type Send = (action: Action) => void;
+const buildNames = { road: "דרך", settlement: "יישוב", city: "עיר" };
+const handText = (h: Partial<Hand>) =>
+  RESOURCES.filter((r) => h[r])
+    .map((r) => `${h[r]} ${names[r]}`)
+    .join(" + ");
+const hexPoints = (x: number, y: number) =>
+  Array.from(
+    { length: 6 },
+    (_, i) =>
+      `${x + 60 * Math.cos(((-90 + i * 60) * Math.PI) / 180)},${y + 60 * Math.sin(((-90 + i * 60) * Math.PI) / 180)}`,
+  ).join(" ");
 
-type BoardCenter = {
-  tileIndex: number;
-  x: number;
-  y: number;
-};
-
-type Vertex = {
-  id: string;
-  x: number;
-  y: number;
-};
-
-type Edge = {
-  id: string;
-  x: number;
-  y: number;
-  angle: number;
-};
-
-type PlayerColor = "blue" | "red" | "green" | "yellow";
-
-type BuiltRoad = {
-  edgeId: string;
-  color: PlayerColor;
-};
-
-type BuildingType = "settlement" | "city";
-
-type BuiltBuilding = {
-  vertexId: string;
-  color: PlayerColor;
-  type: BuildingType;
-};
-
-type BuildType = "road" | "settlement" | "city";
-
-const boardTiles: Tile[] = [
-  { resource: "wood", number: 5 },
-  { resource: "sheep", number: 2 },
-  { resource: "wheat", number: 6 },
-
-  { resource: "brick", number: 3 },
-  { resource: "stone", number: 8 },
-  { resource: "sheep", number: 10 },
-  { resource: "wood", number: 9 },
-
-  { resource: "wheat", number: 12 },
-  { resource: "brick", number: 11 },
-  { resource: "desert" },
-  { resource: "stone", number: 4 },
-  { resource: "wood", number: 8 },
-
-  { resource: "sheep", number: 10 },
-  { resource: "wheat", number: 9 },
-  { resource: "brick", number: 4 },
-  { resource: "stone", number: 5 },
-
-  { resource: "wood", number: 6 },
-  { resource: "sheep", number: 3 },
-  { resource: "wheat", number: 11 },
-];
-
-const resourceImages: Record<Resource, string> = {
-  wood: woodImage,
-  sheep: sheepImage,
-  wheat: wheatImage,
-  brick: brickImage,
-  stone: stoneImage,
-  desert: desertImage,
-};
-
-const roadImages: Record<PlayerColor, string> = {
-  blue: roadBlue,
-  red: roadRed,
-  green: roadGreen,
-  yellow: roadYellow,
-};
-
-const settlementImages: Record<PlayerColor, string> = {
-  blue: settlementBlue,
-  red: settlementRed,
-  green: settlementGreen,
-  yellow: settlementYellow,
-};
-
-const cityImages: Record<PlayerColor, string> = {
-  blue: cityBlue,
-  red: cityRed,
-  green: cityGreen,
-  yellow: cityYellow,
-};
-
-const PLAYER_COLORS: PlayerColor[] = [
-  "blue",
-  "red",
-  "green",
-  "yellow",
-];
-
-const ROWS = [3, 4, 5, 4, 3];
-
-const HEX_SIZE = 60;
-const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;
-const ROW_HEIGHT = HEX_SIZE * 1.5;
-
-function getHexPoints(cx: number, cy: number) {
-  const points: string[] = [];
-
-  for (let i = 0; i < 6; i++) {
-    const angle = ((60 * i - 90) * Math.PI) / 180;
-    const x = cx + HEX_SIZE * Math.cos(angle);
-    const y = cy + HEX_SIZE * Math.sin(angle);
-
-    points.push(`${x},${y}`);
-  }
-
-  return points.join(" ");
-}
-
-function NumberToken({
-  x,
-  y,
-  number,
-  isActive,
+function HandPicker({
+  label,
+  value,
+  onChange,
+  max,
+  disabled = false,
 }: {
-  x: number;
-  y: number;
-  number: number;
-  isActive: boolean;
+  label: string;
+  value: Hand;
+  onChange: (h: Hand) => void;
+  max?: Hand;
+  disabled?: boolean;
 }) {
-  const isRed = number === 6 || number === 8;
-
   return (
-    <>
-      <circle
-        cx={x}
-        cy={y}
-        r={isActive ? 25 : 21}
-        fill={isActive ? "#fff4a8" : "#fff1cc"}
-        stroke={isActive ? "#ffd700" : "#9b8253"}
-        strokeWidth={isActive ? 5 : 2}
-        style={{
-          filter: isActive ? "drop-shadow(0 0 8px #ffd700)" : "none",
-        }}
-      />
-
-      <text
-        x={x}
-        y={y + 7}
-        textAnchor="middle"
-        fontSize="20"
-        fontWeight="700"
-        fill={isRed ? "#c62828" : "#222"}
-      >
-        {number}
-      </text>
-    </>
+    <fieldset className="hand-picker" disabled={disabled}>
+      <legend>{label}</legend>
+      <div className="resource-inputs">
+        {RESOURCES.map((r) => (
+          <label key={r}>
+            <span>
+              {icons[r]} {names[r]}
+            </span>
+            <input
+              aria-label={`${label} ${names[r]}`}
+              type="number"
+              min="0"
+              max={max?.[r] ?? 19}
+              value={value[r]}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  [r]: Math.max(
+                    0,
+                    Math.min(max?.[r] ?? 19, Number(e.target.value) || 0),
+                  ),
+                })
+              }
+            />
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
-
-function getBoardCenters(): BoardCenter[] {
-  const centers: BoardCenter[] = [];
-  const centerX = 400;
-  let tileIndex = 0;
-
-  for (let row = 0; row < ROWS.length; row++) {
-    const amount = ROWS[row];
-    const y = 90 + row * ROW_HEIGHT;
-    const rowWidth = (amount - 1) * HEX_WIDTH;
-    const startX = centerX - rowWidth / 2;
-
-    for (let column = 0; column < amount; column++) {
-      centers.push({
-        tileIndex,
-        x: startX + column * HEX_WIDTH,
-        y,
-      });
-
-      tileIndex++;
-    }
-  }
-
-  return centers;
-}
-
-function getHexCorner(
-  cx: number,
-  cy: number,
-  index: number
-): Point {
-  const angleDeg = -90 + index * 60;
-  const angleRad = (angleDeg * Math.PI) / 180;
-
-  return {
-    x: cx + HEX_SIZE * Math.cos(angleRad),
-    y: cy + HEX_SIZE * Math.sin(angleRad),
-  };
-}
-
-function pointId(point: Point) {
-  const x = Math.round(point.x * 10) / 10;
-  const y = Math.round(point.y * 10) / 10;
-
-  return `${x}-${y}`;
-}
-
-function getBoardVertices(): Vertex[] {
-  const vertices = new Map<string, Vertex>();
-
-  for (const center of getBoardCenters()) {
-    for (let corner = 0; corner < 6; corner++) {
-      const point = getHexCorner(
-        center.x,
-        center.y,
-        corner
-      );
-
-      const id = pointId(point);
-
-      if (!vertices.has(id)) {
-        vertices.set(id, {
-          id,
-          x: Math.round(point.x * 10) / 10,
-          y: Math.round(point.y * 10) / 10,
-        });
-      }
-    }
-  }
-
-  return Array.from(vertices.values());
-}
-
-function getRoadPosition(
-  cx: number,
-  cy: number,
-  edgeIndex: number
-) {
-  const p1 = getHexCorner(cx, cy, edgeIndex);
-  const p2 = getHexCorner(
-    cx,
-    cy,
-    (edgeIndex + 1) % 6
-  );
-
-  const x = (p1.x + p2.x) / 2;
-  const y = (p1.y + p2.y) / 2;
-
-  let angle =
-    (Math.atan2(
-      p2.y - p1.y,
-      p2.x - p1.x
-    ) *
-      180) /
-    Math.PI;
-
-  if (angle > 90) angle -= 180;
-  if (angle < -90) angle += 180;
-
-  return {
-    x,
-    y,
-    angle,
-    p1,
-    p2,
-  };
-}
-
-function getBoardEdges(): Edge[] {
-  const edges = new Map<string, Edge>();
-
-  for (const center of getBoardCenters()) {
-    for (
-      let edgeIndex = 0;
-      edgeIndex < 6;
-      edgeIndex++
-    ) {
-      const road = getRoadPosition(
-        center.x,
-        center.y,
-        edgeIndex
-      );
-
-      const first = pointId(road.p1);
-      const second = pointId(road.p2);
-      const id = [first, second].sort().join("|");
-
-      if (!edges.has(id)) {
-        edges.set(id, {
-          id,
-          x: road.x,
-          y: road.y,
-          angle: road.angle,
-        });
-      }
-    }
-  }
-
-  return Array.from(edges.values());
-}
-
-function RoadPiece({
-  x,
-  y,
-  angle,
-  color,
-}: {
-  x: number;
-  y: number;
-  angle: number;
-  color: PlayerColor;
-}) {
-  const imageSize = HEX_SIZE * (512 / 448);
-
-  return (
-    <image
-      href={roadImages[color]}
-      x={x - imageSize / 2}
-      y={y - imageSize / 2}
-      width={imageSize}
-      height={imageSize}
-      transform={`rotate(${angle} ${x} ${y})`}
-      preserveAspectRatio="xMidYMid meet"
-      style={{ pointerEvents: "none" }}
-    />
-  );
-}
-
-function BuildingPiece({
-  x,
-  y,
-  color,
-  type,
-}: {
-  x: number;
-  y: number;
-  color: PlayerColor;
-  type: BuildingType;
-}) {
-  const size = type === "city" ? 54 : 42;
-  const image =
-    type === "city"
-      ? cityImages[color]
-      : settlementImages[color];
-
-  return (
-    <image
-      href={image}
-      x={x - size / 2}
-      y={y - size / 2}
-      width={size}
-      height={size}
-      preserveAspectRatio="xMidYMid meet"
-      style={{ pointerEvents: "none" }}
-    />
-  );
-}
-
-const BOARD_CENTERS = getBoardCenters();
-const BOARD_VERTICES = getBoardVertices();
-const BOARD_EDGES = getBoardEdges();
-
 function Board({
-  activeNumber,
-  roads,
-  buildings,
-  buildMode,
-  playerColor,
-  onRoadClick,
-  onVertexClick,
+  g,
+  mode,
+  send,
+  disabled,
 }: {
-  activeNumber: number | null;
-  roads: BuiltRoad[];
-  buildings: BuiltBuilding[];
-  buildMode: BuildType | null;
-  playerColor: PlayerColor;
-  onRoadClick: (edgeId: string) => void;
-  onVertexClick: (vertexId: string) => void;
+  g: View;
+  mode: Build | null;
+  send: Send;
+  disabled: boolean;
 }) {
-  const occupiedEdges = new Set(
-    roads.map((road) => road.edgeId)
+  const roadIds = new Set(mode === "road" ? g.legal.roads : []);
+  const vertexIds = new Set(
+    mode === "city"
+      ? g.legal.cities
+      : mode === "settlement"
+        ? g.legal.settlements
+        : [],
   );
-
-  const buildingByVertex = new Map(
-    buildings.map((building) => [
-      building.vertexId,
-      building,
-    ])
-  );
-
+  const keyAction = (event: React.KeyboardEvent, action: Action) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!disabled) send(action);
+    }
+  };
   return (
     <svg
-      viewBox="100 15 600 500"
-      style={{
-        width: "min(960px, 90vw)",
-        height: "auto",
-        display: "block",
-      }}
+      className="board"
+      viewBox="60 -30 680 600"
+      role="group"
+      aria-label="לוח קטאן"
     >
-      {/* משושים */}
-      {BOARD_CENTERS.map(
-        ({ tileIndex, x, y }) => {
-          const tile = boardTiles[tileIndex];
-          const isActive =
-            activeNumber !== null &&
-            tile.number === activeNumber;
-          const clipId = `hexClip-${tileIndex}`;
-
-          return (
-            <g key={tileIndex}>
-              <defs>
-                <clipPath id={clipId}>
-                  <polygon
-                    points={getHexPoints(x, y)}
-                  />
-                </clipPath>
-              </defs>
-
-              <image
-                href={resourceImages[tile.resource]}
-                x={x - HEX_WIDTH / 2 - 3}
-                y={y - HEX_SIZE - 3}
-                width={HEX_WIDTH + 6}
-                height={HEX_SIZE * 2 + 6}
-                preserveAspectRatio="xMidYMid slice"
-                clipPath={`url(#${clipId})`}
-              />
-
-              <polygon
-                points={getHexPoints(x, y)}
-                fill="none"
-                stroke="#ead29b"
-                strokeWidth="3"
-              />
-
-              {tile.number !== undefined && (
-                <NumberToken
-                  x={x}
-                  y={y + 20}
-                  number={tile.number}
-                  isActive={isActive}
-                />
-              )}
-            </g>
-          );
-        }
-      )}
-
-      {/* דרכים שכבר נבנו */}
-      {roads.map((road) => {
-        const edge = BOARD_EDGES.find(
-          (item) => item.id === road.edgeId
-        );
-
-        if (!edge) return null;
-
-        return (
-          <RoadPiece
-            key={road.edgeId}
-            x={edge.x}
-            y={edge.y}
-            angle={edge.angle}
-            color={road.color}
+      <defs>
+        <filter id="piece-matte" colorInterpolationFilters="sRGB">
+          <feColorMatrix
+            type="matrix"
+            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  -1 -1 -1 0 3"
+            result="matte"
           />
-        );
-      })}
-
-      {/* יישובים וערים שכבר נבנו */}
-      {buildings.map((building) => {
-        const vertex = BOARD_VERTICES.find(
-          (item) => item.id === building.vertexId
-        );
-
-        if (!vertex) return null;
-
+          <feComposite in="SourceGraphic" in2="matte" operator="in" />
+        </filter>
+        {g.tiles.map((t) => (
+          <clipPath key={t.id} id={`tile-${t.id}`}>
+            <polygon points={hexPoints(t.x, t.y)} />
+          </clipPath>
+        ))}
+      </defs>
+      {PORTS.map((port, i) => {
+        const dx = port.x - 400,
+          dy = port.y - 270,
+          len = Math.hypot(dx, dy),
+          x = port.x + (dx / len) * 31,
+          y = port.y + (dy / len) * 31;
         return (
-          <BuildingPiece
-            key={building.vertexId}
-            x={vertex.x}
-            y={vertex.y}
-            color={building.color}
-            type={building.type}
-          />
-        );
-      })}
-
-      {/* אפשרויות לבניית דרך מופיעות רק אחרי בחירת "דרך" */}
-      {buildMode === "road" &&
-        BOARD_EDGES.map((edge) => {
-          if (occupiedEdges.has(edge.id)) {
-            return null;
-          }
-
-          const radians =
-            (edge.angle * Math.PI) / 180;
-          const halfLength = HEX_SIZE / 2;
-          const dx =
-            Math.cos(radians) * halfLength;
-          const dy =
-            Math.sin(radians) * halfLength;
-
-          return (
+          <g key={i} className="port">
             <line
-              key={`build-road-${edge.id}`}
-              x1={edge.x - dx}
-              y1={edge.y - dy}
-              x2={edge.x + dx}
-              y2={edge.y + dy}
-              stroke="rgba(255,255,255,0.75)"
-              strokeWidth="12"
-              strokeLinecap="round"
-              style={{ cursor: "pointer" }}
-              onClick={() => onRoadClick(edge.id)}
+              x1={port.x}
+              y1={port.y}
+              x2={x}
+              y2={y}
+              stroke="#e9d2a1"
+              strokeWidth="3"
             />
-          );
-        })}
-
-      {/* אפשרויות לבניית יישוב/עיר */}
-      {(buildMode === "settlement" ||
-        buildMode === "city") &&
-        BOARD_VERTICES.map((vertex) => {
-          const existing =
-            buildingByVertex.get(vertex.id);
-
-          const canBuildSettlement =
-            buildMode === "settlement" &&
-            !existing;
-
-          const canBuildCity =
-            buildMode === "city" &&
-            existing?.type === "settlement" &&
-            existing.color === playerColor;
-
-          if (
-            !canBuildSettlement &&
-            !canBuildCity
-          ) {
-            return null;
-          }
-
-          return (
-            <circle
-              key={`build-vertex-${vertex.id}`}
-              cx={vertex.x}
-              cy={vertex.y}
-              r={buildMode === "city" ? 17 : 12}
-              fill="rgba(255,255,255,0.75)"
-              stroke="#f2c744"
+            <circle cx={x} cy={y} r="20" fill="#fff4da" />
+            <text
+              x={x}
+              y={y - 2}
+              textAnchor="middle"
+              fontSize="12"
+              fill="#263c45"
+            >
+              {port.resource === "any" ? "⚓" : icons[port.resource]}
+            </text>
+            <text
+              x={x}
+              y={y + 12}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#263c45"
+            >
+              {port.resource === "any" ? "3:1" : "2:1"}
+            </text>
+          </g>
+        );
+      })}
+      {g.tiles.map((t) => (
+        <g key={t.id}>
+          <image
+            href={resourceImages[t.resource]}
+            x={t.x - 55}
+            y={t.y - 63}
+            width="110"
+            height="126"
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#tile-${t.id})`}
+          />
+          <polygon
+            points={hexPoints(t.x, t.y)}
+            fill="none"
+            stroke="#e9d2a1"
+            strokeWidth="3"
+          />
+          {t.number !== null && (
+            <g>
+              <circle
+                cx={t.x}
+                cy={t.y + 17}
+                r="20"
+                fill={
+                  g.hasRolled && g.dice && g.dice[0] + g.dice[1] === t.number
+                    ? "#ffe58a"
+                    : "#fff4db"
+                }
+                stroke="#9b8253"
+                strokeWidth="2"
+              />
+              <text
+                x={t.x}
+                y={t.y + 23}
+                textAnchor="middle"
+                fontSize="19"
+                fontWeight="bold"
+                fill={t.number === 6 || t.number === 8 ? "#bd3232" : "#233640"}
+              >
+                {t.number}
+              </text>
+              <text
+                x={t.x}
+                y={t.y + 34}
+                textAnchor="middle"
+                fontSize="7"
+                fill="#6a5140"
+              >
+                {"•".repeat(6 - Math.abs(7 - t.number))}
+              </text>
+            </g>
+          )}
+          {g.robber === t.id && (
+            <g aria-label="שודד">
+              <ellipse
+                cx={t.x}
+                cy={t.y - 17}
+                rx="14"
+                ry="6"
+                fill="#12232b"
+                opacity=".3"
+              />
+              <path
+                d={`M ${t.x - 11} ${t.y - 19} L ${t.x - 6} ${t.y - 40} Q ${t.x - 14} ${t.y - 55} ${t.x} ${t.y - 55} Q ${t.x + 14} ${t.y - 55} ${t.x + 6} ${t.y - 40} L ${t.x + 11} ${t.y - 19} Z`}
+                fill="#243038"
+                stroke="#fff"
+                strokeWidth="1.5"
+              />
+            </g>
+          )}
+          {g.stage === "robber" && !disabled && g.robber !== t.id && (
+            <polygon
+              points={hexPoints(t.x, t.y)}
+              fill="#ffd45a22"
+              stroke="#ffde70"
               strokeWidth="4"
-              style={{ cursor: "pointer" }}
-              onClick={() =>
-                onVertexClick(vertex.id)
+              role="button"
+              tabIndex={0}
+              aria-label={`העבר שודד למשושה ${t.id + 1}`}
+              className="target"
+              onClick={() => send({ type: "move-robber", tileId: t.id })}
+              onKeyDown={(e) =>
+                keyAction(e, { type: "move-robber", tileId: t.id })
+              }
+            />
+          )}
+        </g>
+      ))}
+      {g.roads.map((r) => {
+        const edge = EDGES.find((e) => e.id === r.edgeId)!;
+        return (
+          <image
+            key={r.edgeId}
+            href={pieces.road[r.color]}
+            x={edge.x - 34.3}
+            y={edge.y - 34.3}
+            width="68.6"
+            height="68.6"
+            transform={`rotate(${edge.angle} ${edge.x} ${edge.y})`}
+            className="piece"
+            filter="url(#piece-matte)"
+          />
+        );
+      })}
+      {g.buildings.map((b) => {
+        const v = VERTICES.find((v) => v.id === b.vertexId)!;
+        const size = b.type === "city" ? 48 : 38;
+        return (
+          <image
+            key={b.vertexId}
+            href={pieces[b.type][b.color]}
+            x={v.x - size / 2}
+            y={v.y - size / 2}
+            width={size}
+            height={size}
+            className="piece"
+            filter="url(#piece-matte)"
+          />
+        );
+      })}
+      {!disabled &&
+        EDGES.filter((e) => roadIds.has(e.id)).map((edge, i) => {
+          return (
+            <rect
+              key={edge.id}
+              x={edge.x - 24}
+              y={edge.y - 7}
+              width="48"
+              height="14"
+              rx="7"
+              fill="#fff4bd"
+              transform={`rotate(${edge.angle} ${edge.x} ${edge.y})`}
+              className="target"
+              role="button"
+              tabIndex={0}
+              aria-label={`בנה דרך ${i + 1}`}
+              onClick={() => send({ type: "build-road", edgeId: edge.id })}
+              onKeyDown={(e) =>
+                keyAction(e, { type: "build-road", edgeId: edge.id })
               }
             />
           );
         })}
+      {!disabled &&
+        VERTICES.filter((v) => vertexIds.has(v.id)).map((v, i) => (
+          <circle
+            key={v.id}
+            cx={v.x}
+            cy={v.y}
+            r="11"
+            fill="#fff5cc"
+            stroke="#d28c22"
+            strokeWidth="3"
+            className="target"
+            role="button"
+            tabIndex={0}
+            aria-label={`בנה ${mode === "city" ? "עיר" : "יישוב"} ${i + 1}`}
+            onClick={() => send({ type: `build-${mode}`, vertexId: v.id })}
+            onKeyDown={(e) =>
+              keyAction(e, { type: `build-${mode}`, vertexId: v.id })
+            }
+          />
+        ))}
     </svg>
   );
 }
-
-function StartScreen({
-  onStart,
+function TradePanel({
+  g,
+  id,
+  send,
+  busy,
 }: {
-  onStart: () => void;
+  g: View;
+  id: string;
+  send: Send;
+  busy: boolean;
 }) {
+  const [give, setGive] = useState(emptyHand),
+    [want, setWant] = useState(emptyHand);
+  const mine = g.players[g.currentPlayerIndex].id === id;
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <h1
-        style={{
-          margin: 0,
-          fontSize: "70px",
-          letterSpacing: "10px",
-        }}
-      >
-        CATAN
-      </h1>
-
-      <p
-        style={{
-          fontSize: "20px",
-        }}
-      >
-        המשחק שלנו מתחיל כאן 🎲
-      </p>
-
-      <button
-        onClick={onStart}
-        style={{
-          padding: "14px 30px",
-          border: "none",
-          borderRadius: "12px",
-          background: "#f2c744",
-          fontSize: "18px",
-          fontWeight: "bold",
-          cursor: "pointer",
-        }}
-      >
-        משחק חדש
-      </button>
-    </div>
-  );
-}
-
-function HomeScreen({
-  onEnterLobby,
-  onBack,
-}: {
-  onEnterLobby: (
-    roomCode: string,
-    playerName: string,
-    players: Player[]
-  ) => void;
-  onBack: () => void;
-}) {
-  const [playerName, setPlayerName] =
-    useState("");
-  const [roomCode, setRoomCode] =
-    useState("");
-  const [error, setError] =
-    useState("");
-
-  function createRoom() {
-    const name = playerName.trim();
-
-    if (!name) {
-      setError("צריך לכתוב שם");
-      return;
-    }
-
-    setError("");
-
-    socket.emit(
-      "create-room",
-      name,
-      (response: RoomResponse) => {
-        if (
-          !response.success ||
-          !response.roomCode ||
-          !response.players
-        ) {
-          setError(
-            response.message ||
-              "לא הצלחנו ליצור חדר"
-          );
-          return;
-        }
-
-        onEnterLobby(
-          response.roomCode,
-          name,
-          response.players
-        );
-      }
-    );
-  }
-
-  function joinRoom() {
-    const name = playerName.trim();
-    const code =
-      roomCode.trim().toUpperCase();
-
-    if (!name) {
-      setError("צריך לכתוב שם");
-      return;
-    }
-
-    if (!code) {
-      setError("צריך לכתוב קוד חדר");
-      return;
-    }
-
-    setError("");
-
-    socket.emit(
-      "join-room",
+    <section className="panel">
+      <h2>מסחר</h2>
       {
-        roomCode: code,
-        playerName: name,
-      },
-      (response: RoomResponse) => {
-        if (
-          !response.success ||
-          !response.roomCode ||
-          !response.players
-        ) {
-          setError(
-            response.message ||
-              "לא הצלחנו להצטרף"
-          );
-          return;
-        }
-
-        onEnterLobby(
-          response.roomCode,
-          name,
-          response.players
-        );
-      }
-    );
-  }
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "16px",
-      }}
-    >
-      <h1
-        style={{
-          fontSize: "60px",
-          letterSpacing: "8px",
-          margin: 0,
-        }}
-      >
-        CATAN
-      </h1>
-
-      <h2>משחק אונליין</h2>
-
-      <input
-        value={playerName}
-        onChange={(event) =>
-          setPlayerName(event.target.value)
-        }
-        placeholder="השם שלך"
-        style={{
-          width: "240px",
-          padding: "12px",
-          fontSize: "18px",
-          borderRadius: "10px",
-          border: "1px solid #ccc",
-          textAlign: "center",
-        }}
-      />
-
-      <button
-        onClick={createRoom}
-        style={{
-          width: "240px",
-          padding: "14px",
-          fontSize: "18px",
-          fontWeight: "bold",
-          border: "none",
-          borderRadius: "12px",
-          background: "#f2c744",
-          cursor: "pointer",
-        }}
-      >
-        🎮 צור משחק
-      </button>
-
-      <div>או</div>
-
-      <input
-        value={roomCode}
-        onChange={(event) =>
-          setRoomCode(
-            event.target.value.toUpperCase()
-          )
-        }
-        placeholder="קוד חדר"
-        maxLength={4}
-        style={{
-          width: "240px",
-          padding: "12px",
-          fontSize: "20px",
-          borderRadius: "10px",
-          border: "1px solid #ccc",
-          textAlign: "center",
-          textTransform: "uppercase",
-        }}
-      />
-
-      <button
-        onClick={joinRoom}
-        style={{
-          width: "240px",
-          padding: "14px",
-          fontSize: "18px",
-          fontWeight: "bold",
-          border: "none",
-          borderRadius: "12px",
-          background: "white",
-          cursor: "pointer",
-        }}
-      >
-        הצטרף למשחק
-      </button>
-
-      {error && (
-        <div
-          style={{
-            color: "#8b0000",
-            background: "white",
-            padding: "8px 14px",
-            borderRadius: "8px",
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      <button
-        onClick={onBack}
-        style={{
-          marginTop: "10px",
-          border: "none",
-          background: "transparent",
-          color: "white",
-          cursor: "pointer",
-        }}
-      >
-        ← חזרה
-      </button>
-    </div>
-  );
-}
-
-function LobbyScreen({
-  roomCode,
-  playerName,
-  initialPlayers,
-  onStart,
-  onBack,
-}: {
-  roomCode: string;
-  playerName: string;
-  initialPlayers: Player[];
-  onStart: (
-    gameState: GameState,
-    players: Player[]
-  ) => void;
-  onBack: () => void;
-}) {
-  const [players, setPlayers] =
-    useState<Player[]>(initialPlayers);
-
-  const [error, setError] =
-    useState("");
-
-  const isHost =
-    players[0]?.id === socket.id;
-
-  useEffect(() => {
-    function handlePlayersUpdated(
-      updatedPlayers: Player[]
-    ) {
-      setPlayers(updatedPlayers);
-    }
-
-    function handleGameStarted(
-      newGameState: GameState
-    ) {
-      onStart(
-        newGameState,
-        players
-      );
-    }
-
-    socket.on(
-      "players-updated",
-      handlePlayersUpdated
-    );
-
-    socket.on(
-      "game-started",
-      handleGameStarted
-    );
-
-    return () => {
-      socket.off(
-        "players-updated",
-        handlePlayersUpdated
-      );
-
-      socket.off(
-        "game-started",
-        handleGameStarted
-      );
-    };
-  }, [onStart, players]);
-
-  function startGame() {
-    console.log(
-      "START BUTTON CLICKED"
-    );
-
-    socket.emit(
-      "start-game",
-      { roomCode },
-      (response: {
-        success: boolean;
-        message?: string;
-      }) => {
-        console.log(
-          "SERVER RESPONSE:",
-          response
-        );
-
-        if (!response.success) {
-          setError(
-            response.message ||
-              "לא ניתן להתחיל את המשחק"
-          );
-        }
-      }
-    );
-  }
-
-  function leaveRoom() {
-    socket.disconnect();
-    socket.connect();
-    onBack();
-  }
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "18px",
-      }}
-    >
-      <h1>חדר משחק</h1>
-
-      <div
-        style={{
-          background: "white",
-          color: "#222",
-          padding: "15px 30px",
-          borderRadius: "14px",
-          textAlign: "center",
-        }}
-      >
-        <div>קוד החדר</div>
-
-        <div
-          style={{
-            fontSize: "38px",
-            fontWeight: "bold",
-            letterSpacing: "6px",
-          }}
-        >
-          {roomCode}
-        </div>
-      </div>
-
-      <h2>שחקנים</h2>
-
-      {players.map(
-        (player, index) => (
-          <div
-            key={player.id}
-            style={{
-              width: "260px",
-              background: "white",
-              color: "#222",
-              padding: "12px 18px",
-              borderRadius: "10px",
-              fontSize: "18px",
-            }}
-          >
-            🟢 {player.name}
-
-            {player.name ===
-            playerName
-              ? " (אתה)"
-              : ""}
-
-            {index === 0
-              ? " 👑"
-              : ""}
+        <>
+          <p className="muted">
+            יחסי הבנק שלך:{" "}
+            {RESOURCES.map((r) => `${icons[r]} ${g.me.ratios[r]}:1`).join(
+              " · ",
+            )}
+          </p>
+          <HandPicker
+            label="נותן"
+            value={give}
+            onChange={setGive}
+            max={g.me.resources}
+            disabled={busy}
+          />
+          <HandPicker
+            label="מקבל"
+            value={want}
+            onChange={setWant}
+            disabled={busy}
+          />
+          <div className="button-row">
+            <button
+              disabled={busy || !mine || !total(give) || !total(want)}
+              onClick={() => send({ type: "bank-trade", give, want })}
+            >
+              החלף עם הבנק
+            </button>
+            <button
+              disabled={busy || !total(give) || !total(want)}
+              onClick={() => send({ type: "offer-trade", give, want })}
+            >
+              הצע לשחקנים
+            </button>
           </div>
+        </>
+      }
+      {g.trade ? (
+        <div className="trade-offer">
+          <strong>
+            {g.players.find((p) => p.id === g.trade!.from)?.name} מציע/ה
+          </strong>
+          <p>
+            {handText(g.trade.give)} ← תמורת → {handText(g.trade.want)}
+          </p>
+          {g.trade.from !== id ? (
+            <button
+              disabled={
+                busy ||
+                (!mine &&
+                  g.trade.from !== g.players[g.currentPlayerIndex].id) ||
+                !canPay(g.me.resources, g.trade.want)
+              }
+              onClick={() => send({ type: "accept-trade" })}
+            >
+              קבל עסקה
+            </button>
+          ) : (
+            <button
+              disabled={busy}
+              onClick={() => send({ type: "cancel-trade" })}
+            >
+              בטל הצעה
+            </button>
+          )}
+        </div>
+      ) : (
+        !mine && (
+          <p className="muted">אפשר לסחור עם השחקן שבתורו כשמופיעה הצעה.</p>
         )
       )}
-
-      {players.length < 2 && (
-        <div>
-          מחכים לשחקן נוסף...
-        </div>
-      )}
-
-      {isHost ? (
-        <button
-          onClick={startGame}
-          disabled={
-            players.length < 2
-          }
-          style={{
-            marginTop: "10px",
-            padding: "14px 35px",
-            border: "none",
-            borderRadius: "12px",
-            background:
-              players.length >= 2
-                ? "#f2c744"
-                : "#cccccc",
-            fontSize: "19px",
-            fontWeight: "bold",
-            cursor:
-              players.length >= 2
-                ? "pointer"
-                : "not-allowed",
-          }}
-        >
-          🎮 התחל משחק
-        </button>
-      ) : (
-        <div
-          style={{
-            fontWeight: "bold",
-          }}
-        >
-          מחכים שיוצר החדר יתחיל את המשחק...
-        </div>
-      )}
-
-      {error && (
-        <div
-          style={{
-            background: "white",
-            color: "#9b0000",
-            padding: "8px 14px",
-            borderRadius: "8px",
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      <button
-        onClick={leaveRoom}
-        style={{
-          marginTop: "8px",
-          padding: "10px 22px",
-          border: "none",
-          borderRadius: "10px",
-          cursor: "pointer",
-        }}
-      >
-        יציאה מהחדר
-      </button>
-    </div>
+    </section>
   );
 }
-
-function BuildToolbar({
-  isMyTurn,
-  isOpen,
-  selectedBuild,
-  playerColor,
-  onToggle,
-  onSelect,
+function DevelopmentPanel({
+  g,
+  send,
+  busy,
+  active,
 }: {
-  isMyTurn: boolean;
-  isOpen: boolean;
-  selectedBuild: BuildType | null;
-  playerColor: PlayerColor;
-  onToggle: () => void;
-  onSelect: (type: BuildType | null) => void;
+  g: View;
+  send: Send;
+  busy: boolean;
+  active: boolean;
 }) {
-  const buildItems: Array<{
-    type: BuildType;
-    label: string;
-    image: string;
-  }> = [
-    {
-      type: "road",
-      label: "דרך",
-      image: roadImages[playerColor],
-    },
-    {
-      type: "settlement",
-      label: "יישוב",
-      image: settlementImages[playerColor],
-    },
-    {
-      type: "city",
-      label: "עיר",
-      image: cityImages[playerColor],
-    },
-  ];
-
+  const [choice, setChoice] = useState<DevelopmentType | null>(null),
+    [cards, setCards] = useState(emptyHand),
+    [resource, setResource] = useState<Resource>("wood");
+  const canPlay =
+    active &&
+    !busy &&
+    !g.playedDevelopment &&
+    ["pre-roll", "action"].includes(g.stage);
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: "22px",
-        top: "78px",
-        zIndex: 20,
-        direction: "rtl",
-      }}
-    >
-      <button
-        onClick={onToggle}
-        style={{
-          width: isOpen ? "190px" : "118px",
-          padding: "11px 14px",
-          border: "none",
-          borderRadius: "12px",
-          background: "white",
-          fontWeight: "bold",
-          fontSize: "16px",
-          cursor: "pointer",
-          boxShadow: "0 5px 14px rgba(0,0,0,0.18)",
-        }}
-      >
-        🔨 בנייה {isOpen ? "✕" : ""}
-      </button>
-
-      {isOpen && (
-        <div
-          style={{
-            marginTop: "8px",
-            width: "190px",
-            padding: "10px",
-            background: "rgba(255,255,255,0.97)",
-            borderRadius: "14px",
-            boxShadow: "0 8px 22px rgba(0,0,0,0.2)",
-            color: "#222",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "13px",
-              marginBottom: "8px",
-              textAlign: "center",
-              fontWeight: "bold",
+    <section className="panel">
+      <h2>
+        קלפי הפיתוח שלי <span className="count">{g.me.development.length}</span>
+      </h2>
+      <div className="dev-cards">
+        {(Object.keys(cardNames) as DevelopmentType[]).map((type) => {
+          const hand = g.me.development.filter((c) => c.type === type);
+          if (!hand.length) return null;
+          const playable =
+            canPlay &&
+            type !== "victory" &&
+            hand.some((c) => c.boughtTurn < g.turnNumber);
+          return (
+            <button
+              key={type}
+              disabled={!playable}
+              onClick={() => {
+                if (type === "plenty" || type === "monopoly") setChoice(type);
+                else send({ type: "play-development", card: type });
+              }}
+            >
+              {cardNames[type]} × {hand.length}
+              {type !== "victory" &&
+                !hand.some((c) => c.boughtTurn < g.turnNumber) && (
+                  <small>זמין מהתור הבא</small>
+                )}
+            </button>
+          );
+        })}
+      </div>
+      {!g.me.development.length && (
+        <p className="muted">קלפים שקנית נשארים חסויים מהשחקנים האחרים.</p>
+      )}
+      {choice === "plenty" && canPlay && (
+        <>
+          <HandPicker
+            label="שנת שפע"
+            value={cards}
+            onChange={setCards}
+            max={g.bank}
+          />
+          <button
+            disabled={total(cards) !== Math.min(2, total(g.bank))}
+            onClick={() => {
+              send({ type: "play-development", card: "plenty", cards });
+              setChoice(null);
+              setCards(emptyHand());
             }}
           >
-            {isMyTurn
-              ? selectedBuild
-                ? "עכשיו בחר מקום בלוח"
-                : "מה אתה רוצה לבנות?"
-              : "אפשר לבנות רק בתור שלך"}
+            קבל משאבים
+          </button>
+        </>
+      )}
+      {choice === "monopoly" && canPlay && (
+        <div className="button-row">
+          <select
+            aria-label="משאב למונופול"
+            value={resource}
+            onChange={(e) => setResource(e.target.value as Resource)}
+          >
+            {RESOURCES.map((r) => (
+              <option key={r} value={r}>
+                {names[r]}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => {
+              send({ type: "play-development", card: "monopoly", resource });
+              setChoice(null);
+            }}
+          >
+            הפעל מונופול
+          </button>
+        </div>
+      )}
+      <p className="muted">
+        קלף פעולה אחד בתור, החל מהתור שאחרי הקנייה. נקודות ניצחון נספרות
+        אוטומטית.
+      </p>
+    </section>
+  );
+}
+function DiscardPanel({
+  g,
+  send,
+  busy,
+  required,
+}: {
+  g: View;
+  send: Send;
+  busy: boolean;
+  required: number;
+}) {
+  const [cards, setCards] = useState(emptyHand);
+  return (
+    <section className="panel urgent">
+      <h2>יצא 7 — עליך להשליך {required} קלפים</h2>
+      <HandPicker
+        label="להשלכה"
+        value={cards}
+        onChange={setCards}
+        max={g.me.resources}
+      />
+      <button
+        disabled={busy || total(cards) !== required}
+        onClick={() => send({ type: "discard", cards })}
+      >
+        השלך {total(cards)} מתוך {required}
+      </button>
+    </section>
+  );
+}
+function Game({
+  g,
+  room,
+  id,
+  send,
+  busy,
+  connected,
+}: {
+  g: View;
+  room: Room;
+  id: string;
+  send: Send;
+  busy: boolean;
+  connected: boolean;
+}) {
+  const [menu, setMenu] = useState(false),
+    [build, setBuild] = useState<Build | null>(null);
+  const active = g.players[g.currentPlayerIndex].id === id;
+  const disabled = busy || !connected;
+  const forced: Build | null =
+    g.stage === "setup-settlement"
+      ? "settlement"
+      : ["setup-road", "road-building"].includes(g.stage)
+        ? "road"
+        : null;
+  const mode =
+    active && !g.winner
+      ? (forced ?? (menu && g.stage === "action" ? build : null))
+      : null;
+  const instruction: Record<string, string> = {
+    "setup-settlement": "הצב יישוב התחלתי באחת הנקודות המודגשות",
+    "setup-road": "הצב דרך צמודה ליישוב שהצבת",
+    "pre-roll": "גלגל קוביות כדי להתחיל את התור",
+    action: "אפשר לסחור, לבנות או לקנות קלף פיתוח",
+    discard: "ממתינים להשלכת קלפים מכל מי שמחזיק מעל 7",
+    robber: "בחר משושה אחר כדי להזיז את השודד",
+    steal: "בחר ממי לגנוב קלף אקראי",
+    "road-building": `הצב עד ${g.freeRoads} דרכים ללא עלות`,
+    "game-over": "המשחק הסתיים",
+  };
+  const doAction: Send = (a) => {
+    setBuild(null);
+    send(a);
+  };
+  return (
+    <>
+      <div className="players">
+        {g.players.map((p) => (
+          <article
+            key={p.id}
+            className={`player-card ${p.id === g.players[g.currentPlayerIndex].id ? "current" : ""}`}
+          >
+            <div>
+              <span className={`dot ${p.color}`} />
+              <strong>
+                {p.name}
+                {p.id === id ? " (אתה)" : ""}
+              </strong>
+              <span
+                className={`online ${room.players.find((x) => x.id === p.id)?.online ? "" : "offline"}`}
+                title="מצב חיבור"
+              />
+            </div>
+            <b>{p.score} נקודות</b>
+            <span>
+              קלפים {p.resourceCount} · פיתוח {p.developmentCount}
+            </span>
+            <span>
+              דרך {p.roadLength} · אבירים {p.knights}
+            </span>
+            {(g.longestRoad === p.id || g.largestArmy === p.id) && (
+              <small>
+                {g.longestRoad === p.id ? "🛤 הדרך הארוכה " : ""}
+                {g.largestArmy === p.id ? "🛡 הצבא הגדול" : ""}
+              </small>
+            )}
+          </article>
+        ))}
+      </div>
+      <div className="game-grid">
+        <main className="island">
+          <div className="turn-banner">
+            <span className="eyebrow">
+              תור {g.turnNumber} ·{" "}
+              {g.stage.startsWith("setup") ? "הצבה ראשונית" : "משחק"}
+            </span>
+            <h1>
+              {g.winner
+                ? `${g.players.find((p) => p.id === g.winner)?.name} ניצח/ה! 🏆`
+                : active
+                  ? "התור שלך"
+                  : `התור של ${g.players[g.currentPlayerIndex].name}`}
+            </h1>
+            <p>
+              {active || g.stage === "discard"
+                ? instruction[g.stage]
+                : "צפה בלוח בזמן שהשחקן משלים את התור"}
+            </p>
           </div>
-
-          {buildItems.map((item) => {
-            const selected =
-              selectedBuild === item.type;
-
-            return (
+          <Board
+            g={g}
+            mode={mode}
+            send={doAction}
+            disabled={disabled || !active}
+          />
+          <div className="board-caption">
+            {mode
+              ? `בחר מיקום חוקי לבניית ${buildNames[mode]}`
+              : "הנקודות והצלעות הזמינות מופיעות בעת בחירת בנייה"}{" "}
+            · ⚓ נמלים לאורך החוף
+          </div>
+        </main>
+        <aside className="sidebar">
+          {g.winner && (
+            <section className="panel winner">
+              <h2>🏆 יש לנו מנצח</h2>
+              <p>
+                {g.players.find((p) => p.id === g.winner)?.name} הגיע/ה ל־
+                {g.players.find((p) => p.id === g.winner)?.score} נקודות.
+              </p>
+              <p>אפשר לצאת מהחדר ולהתחיל משחק חדש.</p>
+            </section>
+          )}
+          <section className="panel">
+            <div className="section-title">
+              <h2>המשאבים שלי</h2>
+              <span className="count">{total(g.me.resources)} קלפים</span>
+            </div>
+            <div className="hand">
+              {RESOURCES.map((r) => (
+                <div key={r} className={`resource ${r}`}>
+                  <span>{icons[r]}</span>
+                  <b>{g.me.resources[r]}</b>
+                  <small>{names[r]}</small>
+                </div>
+              ))}
+            </div>
+            <p className="muted">
+              רק אתה רואה את חלוקת המשאבים ואת קלפי הפיתוח שלך.
+            </p>
+          </section>
+          {!g.winner && (
+            <section className="panel">
+              <div className="dice">
+                <span>{g.dice?.[0] ?? "?"}</span>
+                <span>{g.dice?.[1] ?? "?"}</span>
+                <b>
+                  {g.hasRolled && g.dice
+                    ? `סכום ${g.dice[0] + g.dice[1]}`
+                    : "לפני גלגול"}
+                </b>
+              </div>
+              <div className="button-row">
+                {active && g.stage === "pre-roll" && (
+                  <button
+                    className="primary"
+                    disabled={disabled}
+                    onClick={() => send({ type: "roll-dice" })}
+                  >
+                    🎲 גלגל קוביות
+                  </button>
+                )}
+                {active && g.stage === "action" && (
+                  <button
+                    disabled={disabled}
+                    onClick={() => {
+                      setMenu(false);
+                      setBuild(null);
+                      send({ type: "end-turn" });
+                    }}
+                  >
+                    סיים תור ←
+                  </button>
+                )}
+              </div>
+              {!active && (
+                <p className="muted">ממתינים לתור שלך. ניתן לקבל הצעות מסחר.</p>
+              )}
+            </section>
+          )}
+          {!g.winner && (
+            <section className="panel">
               <button
-                key={item.type}
-                disabled={!isMyTurn}
-                onClick={() =>
-                  onSelect(
-                    selected ? null : item.type
-                  )
-                }
-                style={{
-                  width: "100%",
-                  height: "58px",
-                  marginBottom: "7px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "8px",
-                  border: selected
-                    ? "3px solid #f2c744"
-                    : "1px solid #ddd",
-                  borderRadius: "10px",
-                  background: selected
-                    ? "#fff8d8"
-                    : "white",
-                  cursor: isMyTurn
-                    ? "pointer"
-                    : "not-allowed",
-                  opacity: isMyTurn ? 1 : 0.5,
-                  fontWeight: "bold",
-                  fontSize: "16px",
+                className="build-toggle"
+                aria-expanded={menu}
+                onClick={() => {
+                  setMenu(!menu);
+                  setBuild(null);
                 }}
               >
-                <span>{item.label}</span>
-
-                <img
-                  src={item.image}
-                  alt={item.label}
-                  style={{
-                    width: "54px",
-                    height: "48px",
-                    objectFit: "contain",
-                  }}
-                />
+                🔨 בנייה {menu ? "−" : "+"}
               </button>
-            );
-          })}
-
-          {selectedBuild && (
-            <button
-              onClick={() => onSelect(null)}
-              style={{
-                width: "100%",
-                padding: "8px",
-                border: "none",
-                borderRadius: "9px",
-                background: "#eee",
-                cursor: "pointer",
-              }}
-            >
-              ביטול בחירה
-            </button>
+              {menu && (
+                <div className="build-options">
+                  {(["road", "settlement", "city"] as Build[]).map((type) => {
+                    const count =
+                      type === "road"
+                        ? g.legal.roads.length
+                        : type === "settlement"
+                          ? g.legal.settlements.length
+                          : g.legal.cities.length;
+                    return (
+                      <button
+                        key={type}
+                        className={mode === type ? "selected" : ""}
+                        disabled={
+                          disabled || !active || g.stage !== "action" || !count
+                        }
+                        onClick={() => setBuild(build === type ? null : type)}
+                      >
+                        <img
+                          src={
+                            pieces[type][
+                              g.players.find((p) => p.id === id)!.color
+                            ]
+                          }
+                          alt=""
+                        />
+                        <span>
+                          <strong>{buildNames[type]}</strong>
+                          <small>{handText(COSTS[type])}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    disabled={
+                      disabled ||
+                      !active ||
+                      g.stage !== "action" ||
+                      !g.developmentRemaining ||
+                      !canPay(g.me.resources, COSTS.development)
+                    }
+                    onClick={() => send({ type: "buy-development" })}
+                  >
+                    <span>🃏</span>
+                    <span>
+                      <strong>קנה קלף פיתוח</strong>
+                      <small>
+                        {handText(COSTS.development)} · נותרו{" "}
+                        {g.developmentRemaining}
+                      </small>
+                    </span>
+                  </button>
+                  <p className="muted">
+                    15 דרכים, 5 יישובים ו־4 ערים לכל שחקן. רק מיקומים חוקיים
+                    מוצגים בלוח.
+                  </p>
+                </div>
+              )}
+            </section>
           )}
-        </div>
-      )}
-    </div>
+          {!!g.pendingDiscards[id] && (
+            <DiscardPanel
+              key={`discard-${g.turnNumber}`}
+              g={g}
+              send={send}
+              busy={disabled}
+              required={g.pendingDiscards[id]}
+            />
+          )}
+          {g.stage === "steal" && active && (
+            <section className="panel urgent">
+              <h2>בחר שחקן לגניבה</h2>
+              {g.victims.map((v) => (
+                <button
+                  key={v}
+                  disabled={disabled}
+                  onClick={() => send({ type: "steal", victimId: v })}
+                >
+                  {g.players.find((p) => p.id === v)?.name}
+                </button>
+              ))}
+            </section>
+          )}
+          {g.stage === "action" && (
+            <TradePanel
+              key={`trade-${g.turnNumber}`}
+              g={g}
+              id={id}
+              send={send}
+              busy={disabled}
+            />
+          )}
+          {!g.winner && (
+            <DevelopmentPanel
+              key={`development-${g.turnNumber}`}
+              g={g}
+              active={active}
+              send={send}
+              busy={disabled}
+            />
+          )}
+          <details className="panel">
+            <summary>הבנק</summary>
+            <p>{handText(g.bank)}</p>
+            <p>קלפי פיתוח שנותרו: {g.developmentRemaining}</p>
+          </details>
+          <details className="panel" open>
+            <summary>יומן המשחק</summary>
+            <ol className="game-log">
+              {g.log
+                .slice(-8)
+                .reverse()
+                .map((entry, i) => (
+                  <li key={`${g.revision}-${i}`}>{entry}</li>
+                ))}
+            </ol>
+          </details>
+        </aside>
+      </div>
+    </>
   );
 }
-
-function GameScreen({
-  roomCode,
-  players,
-  initialGameState,
-  onBack,
-}: {
-  roomCode: string;
-  players: Player[];
-  initialGameState: GameState;
-  onBack: () => void;
-}) {
-  const [gameState, setGameState] =
-    useState<GameState>(initialGameState);
-
-  const [error, setError] = useState("");
-  const [buildMenuOpen, setBuildMenuOpen] =
-    useState(false);
-  const [selectedBuild, setSelectedBuild] =
-    useState<BuildType | null>(null);
-
+function App() {
+  const [connected, setConnected] = useState(socket.connected),
+    [id, setId] = useState(""),
+    [room, setRoom] = useState<Room | null>(null),
+    [g, setGame] = useState<View | null>(null);
+  const [name, setName] = useState(""),
+    [code, setCode] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
   useEffect(() => {
-    function handleGameState(
-      newGameState: GameState
-    ) {
-      console.log(
-        "NEW GAME STATE:",
-        newGameState
-      );
-
-      setGameState(newGameState);
+    function connect() {
+      setConnected(true);
       setError("");
+      socket.emit("resume", {}, (reply: Reply) => {
+        if (reply.playerId) setId(reply.playerId);
+      });
     }
-
-    socket.on(
-      "game-state",
-      handleGameState
-    );
-
+    function disconnect() {
+      setConnected(false);
+      setBusy(false);
+    }
+    function failure() {
+      setConnected(false);
+      setError("החיבור לשרת לא זמין. מנסים להתחבר מחדש…");
+    }
+    function identity(value: string) {
+      setId(value);
+    }
+    function roomState(value: Room) {
+      setRoom(value);
+    }
+    function gameState(value: View) {
+      setGame((old) => (!old || value.revision >= old.revision ? value : old));
+    }
+    function left() {
+      setRoom(null);
+      setGame(null);
+    }
+    socket.on("connect", connect);
+    socket.on("disconnect", disconnect);
+    socket.on("connect_error", failure);
+    socket.on("identity", identity);
+    socket.on("room-state", roomState);
+    socket.on("game-state", gameState);
+    socket.on("room-left", left);
+    if (socket.connected) connect();
     return () => {
-      socket.off(
-        "game-state",
-        handleGameState
-      );
+      socket.off("connect", connect);
+      socket.off("disconnect", disconnect);
+      socket.off("connect_error", failure);
+      socket.off("identity", identity);
+      socket.off("room-state", roomState);
+      socket.off("game-state", gameState);
+      socket.off("room-left", left);
     };
   }, []);
-
-  const currentPlayer =
-    players[gameState.currentPlayerIndex];
-
-  const isMyTurn =
-    currentPlayer?.id === socket.id;
-
-  const myPlayerIndex = Math.max(
-    0,
-    players.findIndex(
-      (player) => player.id === socket.id
-    )
-  );
-
-  const myColor =
-    PLAYER_COLORS[
-      myPlayerIndex % PLAYER_COLORS.length
-    ];
-
-  function emitBuild(
-    eventName:
-      | "build-road"
-      | "build-settlement"
-      | "build-city",
-    locationKey: "edgeId" | "vertexId",
-    locationId: string
-  ) {
-    if (!isMyTurn) {
-      setError("אפשר לבנות רק בתור שלך");
+  function request(event: string, data: unknown) {
+    if (busy) return;
+    if (!connected) {
+      setError("ממתינים לחיבור לשרת");
       return;
     }
-
-    socket.emit(
-      eventName,
-      {
-        roomCode,
-        [locationKey]: locationId,
-      },
-      (response: {
-        success: boolean;
-        message?: string;
-      }) => {
-        if (!response.success) {
-          setError(
-            response.message ||
-              "לא ניתן לבנות כאן"
-          );
-          return;
-        }
-
-        setError("");
-        setSelectedBuild(null);
-      }
-    );
+    setBusy(true);
+    setError("");
+    socket
+      .timeout(8000)
+      .emit(event, data, (timeout: Error | null, reply: Reply) => {
+        setBusy(false);
+        if (timeout)
+          setError("לא התקבל אישור מהשרת. בדוק את הלוח לפני ניסיון נוסף.");
+        else if (!reply.success) setError(reply.message || "הפעולה נכשלה");
+      });
   }
-
-  function handleRoadClick(edgeId: string) {
-    if (selectedBuild !== "road") return;
-
-    emitBuild(
-      "build-road",
-      "edgeId",
-      edgeId
-    );
-  }
-
-  function handleVertexClick(
-    vertexId: string
-  ) {
-    if (selectedBuild === "settlement") {
-      emitBuild(
-        "build-settlement",
-        "vertexId",
-        vertexId
-      );
-      return;
-    }
-
-    if (selectedBuild === "city") {
-      emitBuild(
-        "build-city",
-        "vertexId",
-        vertexId
-      );
-    }
-  }
-
-  function rollDice() {
-    socket.emit(
-      "roll-dice",
-      { roomCode },
-      (response: {
-        success: boolean;
-        message?: string;
-      }) => {
-        if (!response.success) {
-          setError(
-            response.message ||
-              "לא ניתן לגלגל"
-          );
-        }
-      }
-    );
-  }
-
-  function endTurn() {
-    socket.emit(
-      "end-turn",
-      { roomCode },
-      (response: {
-        success: boolean;
-        message?: string;
-      }) => {
-        if (!response.success) {
-          setError(
-            response.message ||
-              "לא ניתן לסיים תור"
-          );
-          return;
-        }
-
-        setSelectedBuild(null);
-        setBuildMenuOpen(false);
-      }
-    );
-  }
-
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        width: "100%",
-        position: "relative",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        overflow: "hidden",
-      }}
-    >
-      <button
-        onClick={onBack}
-        style={{
-          position: "absolute",
-          top: "22px",
-          left: "22px",
-          padding: "9px 18px",
-          border: "none",
-          borderRadius: "10px",
-          background: "white",
-          cursor: "pointer",
-          zIndex: 30,
-        }}
-      >
-        חזרה
-      </button>
-
-      <BuildToolbar
-        isMyTurn={isMyTurn}
-        isOpen={buildMenuOpen}
-        selectedBuild={selectedBuild}
-        playerColor={myColor}
-        onToggle={() =>
-          setBuildMenuOpen(
-            (current) => !current
-          )
-        }
-        onSelect={setSelectedBuild}
-      />
-
-      {/* קוביות מסונכרנות */}
-      <div
-        style={{
-          position: "absolute",
-          top: "22px",
-          right: "22px",
-          width: "180px",
-          padding: "15px",
-          borderRadius: "16px",
-          background:
-            "rgba(255,255,255,0.95)",
-          color: "#222",
-          textAlign: "center",
-          boxShadow:
-            "0 6px 18px rgba(0,0,0,0.2)",
-          zIndex: 10,
-        }}
-      >
-        <strong>
-          🎲 תור {gameState.turnNumber}
-        </strong>
-
-        <div
-          style={{
-            marginTop: "8px",
-            marginBottom: "10px",
-          }}
-        >
-          {isMyTurn
-            ? "התור שלך 👈"
-            : `התור של ${
-                currentPlayer?.name ??
-                "השחקן השני"
-              }`}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: "10px",
-          }}
-        >
-          <div
-            style={{
-              width: "50px",
-              height: "50px",
-              background: "white",
-              border: "2px solid #ddd",
-              borderRadius: "10px",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              fontSize: "26px",
-              fontWeight: "bold",
-            }}
+    <div className="app" dir="rtl">
+      <header className="topbar">
+        <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
+          CATAN<span>האי מחכה לכם</span>
+        </a>
+        <div className="room-meta">
+          {room && (
+            <span>
+              חדר <b dir="ltr">{room.roomCode}</b>
+            </span>
+          )}
+          <span
+            className={connected ? "connection" : "connection disconnected"}
           >
-            {gameState.dice[0]}
-          </div>
-
-          <div
-            style={{
-              width: "50px",
-              height: "50px",
-              background: "white",
-              border: "2px solid #ddd",
-              borderRadius: "10px",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              fontSize: "26px",
-              fontWeight: "bold",
-            }}
-          >
-            {gameState.dice[1]}
-          </div>
-        </div>
-
-        {gameState.hasRolled && (
-          <div
-            style={{
-              margin: "8px 0",
-              fontWeight: "bold",
-            }}
-          >
-            סכום:{" "}
-            {gameState.dice[0] +
-              gameState.dice[1]}
-          </div>
-        )}
-
-        {!gameState.hasRolled &&
-          isMyTurn && (
+            {connected ? "● מחובר" : "● מתחבר מחדש"}
+          </span>
+          {room && (!room.started || g?.winner) && (
             <button
-              onClick={rollDice}
-              style={{
-                width: "100%",
-                marginTop: "10px",
-                padding: "10px",
-                border: "none",
-                borderRadius: "9px",
-                background: "#f2c744",
-                fontWeight: "bold",
-                cursor: "pointer",
-              }}
+              className="quiet"
+              disabled={busy}
+              onClick={() => request("leave-room", {})}
             >
-              🎲 גלגל
+              יציאה מהחדר
             </button>
           )}
-
-        {gameState.hasRolled &&
-          isMyTurn && (
+        </div>
+      </header>
+      {!connected && room && (
+        <div className="notice" role="status">
+          החיבור נותק. המשחק נשמר והמקום שלך נשמר; מנסים להתחבר מחדש.
+        </div>
+      )}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+          <button aria-label="סגור הודעה" onClick={() => setError("")}>
+            ×
+          </button>
+        </div>
+      )}
+      {!room ? (
+        <main className="welcome">
+          <section>
+            <span className="eyebrow">משחק הבסיס · 3–4 שחקנים</span>
+            <h1>
+              בונים אי.
+              <br />
+              יוצרים אימפריה.
+            </h1>
+            <p>
+              סחרו במשאבים, סללו דרכים והקימו יישובים.
+              <br />
+              הראשון שמגיע ל־10 נקודות בתורו מנצח.
+            </p>
+            <div className="feature-list">
+              <span>🌾 משאבים ומסחר</span>
+              <span>🛤 דרכים וערים</span>
+              <span>🃏 קלפי פיתוח</span>
+            </div>
+          </section>
+          <section className="panel entry">
+            <h2>יוצאים לדרך</h2>
+            <label>
+              שם השחקן
+              <input
+                placeholder="השם שלך"
+                value={name}
+                maxLength={30}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
             <button
-              onClick={endTurn}
-              style={{
-                width: "100%",
-                marginTop: "10px",
-                padding: "10px",
-                border: "none",
-                borderRadius: "9px",
-                background: "#8fd18f",
-                fontWeight: "bold",
-                cursor: "pointer",
-              }}
+              className="primary"
+              disabled={!connected || busy || !name.trim()}
+              onClick={() => request("create-room", { playerName: name })}
             >
-              סיים תור ➜
+              צור משחק
             </button>
+            <div className="divider">או הצטרפו לחברים</div>
+            <label>
+              קוד חדר
+              <input
+                placeholder="קוד חדר"
+                dir="ltr"
+                value={code}
+                maxLength={5}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+              />
+            </label>
+            <button
+              disabled={!connected || busy || !name.trim() || !code.trim()}
+              onClick={() =>
+                request("join-room", { playerName: name, roomCode: code })
+              }
+            >
+              הצטרף למשחק
+            </button>
+          </section>
+        </main>
+      ) : !room.started ? (
+        <main className="lobby panel">
+          <span className="eyebrow">מכינים את האי</span>
+          <h1>החדר שלכם מוכן</h1>
+          <p>שתפו את הקוד עם החברים</p>
+          <strong className="room-code" dir="ltr">
+            {room.roomCode}
+          </strong>
+          <ul>
+            {room.players.map((p) => (
+              <li key={p.id}>
+                <span className={`dot ${p.color}`} />
+                {p.name}
+                {p.id === id ? " (אתה)" : ""}
+                {p.id === room.hostId ? " · מארח" : ""}
+                <span className="muted">{p.online ? "מחובר" : "לא מחובר"}</span>
+              </li>
+            ))}
+          </ul>
+          <p>משחק הבסיס מיועד ל־3–4 שחקנים. כל שחקן מצטרף מחלון נפרד.</p>
+          {room.hostId === id ? (
+            <button
+              className="primary"
+              disabled={
+                busy ||
+                room.players.length < 3 ||
+                room.players.some((p) => !p.online)
+              }
+              onClick={() => request("start-game", {})}
+            >
+              התחל משחק
+            </button>
+          ) : (
+            <p>ממתינים למארח שיתחיל את המשחק</p>
           )}
-
-        {!isMyTurn && (
-          <div
-            style={{
-              marginTop: "10px",
-              fontSize: "13px",
-            }}
-          >
-            ממתין לשחקן השני...
-          </div>
-        )}
-
-        {error && (
-          <div
-            style={{
-              marginTop: "8px",
-              color: "#b00020",
-              fontSize: "13px",
-            }}
-          >
-            {error}
-          </div>
-        )}
-      </div>
-
-      <h1
-        style={{
-          margin: "18px 0 4px",
-          fontSize: "42px",
-          letterSpacing: "8px",
-        }}
-      >
-        CATAN
-      </h1>
-
-      <div
-        style={{
-          flex: 1,
-          width: "100%",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <Board
-          activeNumber={
-            gameState.hasRolled
-              ? gameState.dice[0] +
-                gameState.dice[1]
-              : null
-          }
-          roads={gameState.roads ?? []}
-          buildings={
-            gameState.buildings ?? []
-          }
-          buildMode={selectedBuild}
-          playerColor={myColor}
-          onRoadClick={handleRoadClick}
-          onVertexClick={handleVertexClick}
+        </main>
+      ) : g ? (
+        <Game
+          g={g}
+          room={room}
+          id={id}
+          send={(action) => request("game-action", action)}
+          busy={busy}
+          connected={connected}
         />
-      </div>
+      ) : (
+        <p className="notice">טוענים את המשחק…</p>
+      )}
+      <footer>
+        <details>
+          <summary>איך משחקים?</summary>
+          <p>
+            מציבים שני יישובים ושתי דרכים בסדר הלוך־חזור. היישוב השני מספק
+            משאבים התחלתיים. בתור שלך מגלגלים קוביות, סוחרים ובונים. יישוב מפיק
+            משאב אחד ועיר שניים. שומרים על מרחק של שתי צלעות בין מבנים. ב־7
+            משליכים חצי מהיד אם יש מעל 7 קלפים, מזיזים שודד וגונבים משאב.
+          </p>
+          <p>
+            הדרך הארוכה (לפחות 5) והצבא הגדול (לפחות 3 אבירים) מעניקים 2 נקודות
+            כל אחד. נקודות פיתוח נשארות חסויות. הראשון שמגיע ל־10 בתורו מנצח.
+            ההתקדמות נשמרת בשרת; חזרה באותה לשונית משחזרת את המקום.
+          </p>
+          <a
+            href="https://www.catan.com/understand-catan/game-rules"
+            target="_blank"
+            rel="noreferrer"
+          >
+            חוקי CATAN הרשמיים ↗
+          </a>
+        </details>
+        <span>משחק חברים עצמאי · ללא הרחבות</span>
+      </footer>
     </div>
   );
 }
-
-function App() {
-  const [screen, setScreen] =
-    useState<
-      "start" |
-        "home" |
-        "lobby" |
-        "game"
-    >("start");
-
-  const [roomCode, setRoomCode] =
-    useState("");
-
-  const [
-    playerName,
-    setPlayerName,
-  ] = useState("");
-
-  const [players, setPlayers] =
-    useState<Player[]>([]);
-
-  const [
-    gameState,
-    setGameState,
-  ] = useState<GameState | null>(
-    null
-  );
-
-  function enterLobby(
-    code: string,
-    name: string,
-    roomPlayers: Player[]
-  ) {
-    setRoomCode(code);
-    setPlayerName(name);
-    setPlayers(roomPlayers);
-    setScreen("lobby");
-  }
-
-  return (
-    <div
-      style={{
-        width: "100%",
-        minHeight: "100vh",
-        margin: 0,
-        background:
-          "linear-gradient(180deg, #70d6ee 0%, #1ca8d1 100%)",
-        color: "white",
-        fontFamily:
-          "Arial, Helvetica, sans-serif",
-      }}
-    >
-      {screen === "start" && (
-        <StartScreen
-          onStart={() => {
-            setScreen("home");
-          }}
-        />
-      )}
-
-      {screen === "home" && (
-        <HomeScreen
-          onEnterLobby={
-            enterLobby
-          }
-          onBack={() => {
-            setScreen("start");
-          }}
-        />
-      )}
-
-      {screen === "lobby" && (
-        <LobbyScreen
-          roomCode={roomCode}
-          playerName={playerName}
-          initialPlayers={players}
-          onStart={(
-            newGameState,
-            roomPlayers
-          ) => {
-            setGameState(
-              newGameState
-            );
-            setPlayers(
-              roomPlayers
-            );
-            setScreen("game");
-          }}
-          onBack={() => {
-            setScreen("home");
-          }}
-        />
-      )}
-
-      {screen === "game" &&
-        gameState && (
-          <GameScreen
-            roomCode={roomCode}
-            players={players}
-            initialGameState={
-              gameState
-            }
-            onBack={() => {
-              setScreen(
-                "lobby"
-              );
-            }}
-          />
-        )}
-    </div>
-  );
-}
-
 export default App;
