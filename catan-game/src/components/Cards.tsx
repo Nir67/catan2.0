@@ -1,13 +1,15 @@
 import { useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
-import type { Resource, DevelopmentType } from "../../shared/engine.js";
+import type { Resource, DevelopmentType, Track } from "../../shared/engine.js";
 import cardArt from "../assets/cards/card-art.png";
+import expansionArt from "../assets/cards/expansion-art.png";
 import "./Cards.css";
 
-type CardKind = Resource | DevelopmentType;
+type CardKind = Resource | DevelopmentType | Track;
 const cards: Record<
   CardKind,
   {
+    atlas?: boolean;
     column: number;
     row: number;
     title: string;
@@ -16,6 +18,60 @@ const cards: Record<
     tone: string;
   }
 > = {
+  paper: {
+    atlas: true,
+    column: 0,
+    row: 0,
+    title: "נייר",
+    subtitle: "סחורה · מדע",
+    description: "סחורה המופקת בעיר הסמוכה ליער, לפיתוח מדע.",
+    tone: "#52795d",
+  },
+  cloth: {
+    atlas: true,
+    column: 1,
+    row: 0,
+    title: "בד",
+    subtitle: "סחורה · מסחר",
+    description: "סחורה המופקת בעיר הסמוכה למרעה, לפיתוח מסחר.",
+    tone: "#b9963a",
+  },
+  coin: {
+    atlas: true,
+    column: 2,
+    row: 0,
+    title: "מטבעות",
+    subtitle: "סחורה · פוליטיקה",
+    description: "סחורה המופקת בעיר הסמוכה להרים, לפיתוח פוליטיקה.",
+    tone: "#527393",
+  },
+  science: {
+    atlas: true,
+    column: 0,
+    row: 1,
+    title: "מדע",
+    subtitle: "קלף התקדמות",
+    description: "המצאות ופיתוח ערים",
+    tone: "#52795d",
+  },
+  politics: {
+    atlas: true,
+    column: 1,
+    row: 1,
+    title: "פוליטיקה",
+    subtitle: "קלף התקדמות",
+    description: "אבירים והגנת קטאן",
+    tone: "#527393",
+  },
+  trade: {
+    atlas: true,
+    column: 2,
+    row: 1,
+    title: "מסחר",
+    subtitle: "קלף התקדמות",
+    description: "סוחרים וסחורות",
+    tone: "#b9963a",
+  },
   wood: {
     column: 0,
     row: 0,
@@ -51,7 +107,7 @@ const cards: Record<
   stone: {
     column: 4,
     row: 0,
-    title: "ברזל",
+    title: "מחצבים",
     subtitle: "קלף משאב",
     description: "מחצבים מההרים משמשים לשדרוג ערים ולרכישת קלפי פיתוח.",
     tone: "#536675",
@@ -117,8 +173,9 @@ export function CardArt({ kind }: { kind: CardKind }) {
       aria-hidden="true"
       className="card-illustration"
       style={{
-        backgroundImage: `url(${cardArt})`,
-        backgroundPosition: `${card.column * 25}% ${card.row * 100}%`,
+        backgroundImage: `url(${card.atlas ? expansionArt : cardArt})`,
+        backgroundSize: card.atlas ? "300% 200%" : "500% 200%",
+        backgroundPosition: `${card.column * (card.atlas ? 50 : 25)}% ${card.row * 100}%`,
       }}
     />
   );
@@ -211,9 +268,30 @@ export function CardGallery({ onClose }: { onClose: () => void }) {
         </div>
       </section>
       <p className="gallery-footnote">
-        קלף פעולה אחד בתור, החל מהתור שאחרי הרכישה. נקודות ניצחון נספרות
-        אוטומטית.
+        במשחק הבסיס: קלף פעולה אחד בתור, החל מהתור שאחרי הרכישה. נקודות ניצחון
+        נספרות אוטומטית.
       </p>
+      <section>
+        <h3>ערים ואבירים · סחורות ותחומי התקדמות</h3>
+        <div className="gallery-cards">
+          {(
+            [
+              "paper",
+              "cloth",
+              "coin",
+              "science",
+              "politics",
+              "trade",
+            ] as CardKind[]
+          ).map((kind) => (
+            <PlayingCard key={kind} kind={kind} showDescription />
+          ))}
+        </div>
+        <p className="gallery-footnote">
+          בהרחבה: 54 קלפי התקדמות בשלושה תחומים. ניתן לשחק כמה קלפים בתורך אחרי
+          הגלגול; אלכימאי לפני הגלגול. נקודות ניצחון מקלפי התקדמות גלויות מיד.
+        </p>
+      </section>
     </dialog>
   );
 }

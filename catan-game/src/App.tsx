@@ -3,6 +3,7 @@ import { socket } from "./socket";
 import {
   COSTS,
   RESOURCES,
+  MATERIALS,
   VERTICES,
   EDGES,
   PORTS,
@@ -18,6 +19,11 @@ import type {
   DevelopmentType,
 } from "../shared/engine.js";
 import "./App.css";
+import {
+  ExpansionPanel,
+  ExpansionChoice,
+  ExpansionStatus,
+} from "./components/Expansion";
 import { CardArt, PlayingCard, CardGallery } from "./components/Cards";
 import wood from "./assets/wood.png";
 import sheep from "./assets/sheep.png";
@@ -43,7 +49,10 @@ const names: Record<Resource, string> = {
   brick: "לבנים",
   sheep: "צמר",
   wheat: "חיטה",
-  stone: "ברזל",
+  stone: "מחצבים",
+  paper: "נייר",
+  cloth: "בד",
+  coin: "מטבעות",
 };
 const icons: Record<Resource, string> = {
   wood: "🌲",
@@ -51,6 +60,9 @@ const icons: Record<Resource, string> = {
   sheep: "🐑",
   wheat: "🌾",
   stone: "⛰️",
+  paper: "📜",
+  cloth: "🧵",
+  coin: "🪙",
 };
 const cardNames: Record<DevelopmentType, string> = {
   knight: "אביר",
@@ -72,6 +84,7 @@ const pieces = {
 };
 type Build = "road" | "settlement" | "city";
 type Room = {
+  mode: "base" | "cities-knights";
   roomCode: string;
   hostId: string;
   started: boolean;
@@ -82,7 +95,7 @@ type Reply = { success: boolean; message?: string; playerId?: string };
 type Send = (action: Action) => void;
 const buildNames = { road: "דרך", settlement: "יישוב", city: "עיר" };
 const handText = (h: Partial<Hand>) =>
-  RESOURCES.filter((r) => h[r])
+  MATERIALS.filter((r) => h[r])
     .map((r) => `${h[r]} ${names[r]}`)
     .join(" + ");
 const hexPoints = (x: number, y: number) =>
@@ -98,18 +111,20 @@ function HandPicker({
   onChange,
   max,
   disabled = false,
+  expansion = false,
 }: {
   label: string;
   value: Hand;
   onChange: (h: Hand) => void;
   max?: Hand;
   disabled?: boolean;
+  expansion?: boolean;
 }) {
   return (
     <fieldset className="hand-picker" disabled={disabled}>
       <legend>{label}</legend>
       <div className="resource-inputs">
-        {RESOURCES.map((r) => (
+        {(expansion ? MATERIALS : RESOURCES).map((r) => (
           <label key={r}>
             <CardArt kind={r} />
             <span>{names[r]}</span>
@@ -383,6 +398,104 @@ function Board({
             }
           />
         ))}
+      {g.mode === "cities-knights" && (
+        <>
+          {g.buildings
+            .filter((b) => b.wall || b.metropolis)
+            .map((b) => {
+              const v = VERTICES.find((v) => v.id === b.vertexId)!;
+              return (
+                <g key={b.vertexId}>
+                  {b.wall && (
+                    <rect
+                      x={v.x - 24}
+                      y={v.y + 12}
+                      width="48"
+                      height="9"
+                      fill="#d6ba75"
+                      stroke="#6e592f"
+                    />
+                  )}
+                  {b.metropolis && (
+                    <text
+                      x={v.x}
+                      y={v.y - 19}
+                      textAnchor="middle"
+                      fontSize="24"
+                      aria-label="מטרופולין"
+                    >
+                      ♛
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          {g.knightPieces!.map((k) => {
+            const v = VERTICES.find((v) => v.id === k.vertexId)!;
+            return (
+              <g
+                key={k.vertexId}
+                aria-label={`אביר דרגה ${k.level} ${k.active ? "פעיל" : "לא פעיל"}`}
+              >
+                <circle
+                  cx={v.x}
+                  cy={v.y}
+                  r="15"
+                  fill={
+                    k.active
+                      ? {
+                          blue: "#367db8",
+                          red: "#b8413c",
+                          green: "#397346",
+                          yellow: "#d6aa35",
+                        }[k.color]
+                      : "#e0dcd0"
+                  }
+                  stroke={
+                    {
+                      blue: "#367db8",
+                      red: "#b8413c",
+                      green: "#397346",
+                      yellow: "#b88b25",
+                    }[k.color]
+                  }
+                  strokeWidth="4"
+                />
+                <text
+                  x={v.x}
+                  y={v.y + 5}
+                  textAnchor="middle"
+                  fontSize="18"
+                  fill={k.active ? "white" : "#5b6769"}
+                >
+                  ♞
+                </text>
+                <text x={v.x + 13} y={v.y + 17} fontSize="10" fill="#fff">
+                  {k.level}
+                </text>
+              </g>
+            );
+          })}
+          {VERTICES.map((v, i) => (
+            <text className="site-number" key={v.id} x={v.x + 11} y={v.y - 12}>
+              {i + 1}
+            </text>
+          ))}
+          {g.merchant &&
+            (() => {
+              const t = g.tiles[g.merchant.tileId];
+              return (
+                <g aria-label="סוחר">
+                  <path
+                    d={`M ${t.x + 22} ${t.y - 8} l 8 -25 l 8 25 Z`}
+                    fill="#9b5a92"
+                    stroke="white"
+                  />
+                </g>
+              );
+            })()}
+        </>
+      )}
     </svg>
   );
 }
@@ -407,11 +520,12 @@ function TradePanel({
         <>
           <p className="muted">
             יחסי הבנק שלך:{" "}
-            {RESOURCES.map((r) => `${names[r]} ${g.me.ratios[r]}:1`).join(
-              " · ",
-            )}
+            {(g.mode === "cities-knights" ? MATERIALS : RESOURCES)
+              .map((r) => `${names[r]} ${g.me.ratios[r]}:1`)
+              .join(" · ")}
           </p>
           <HandPicker
+            expansion={g.mode === "cities-knights"}
             label="נותן"
             value={give}
             onChange={setGive}
@@ -419,6 +533,7 @@ function TradePanel({
             disabled={busy}
           />
           <HandPicker
+            expansion={g.mode === "cities-knights"}
             label="מקבל"
             value={want}
             onChange={setWant}
@@ -606,6 +721,7 @@ function DiscardPanel({
     <section className="panel urgent">
       <h2>יצא 7 — עליך להשליך {required} קלפים</h2>
       <HandPicker
+        expansion={g.mode === "cities-knights"}
         label="להשלכה"
         value={cards}
         onChange={setCards}
@@ -650,10 +766,17 @@ function Game({
       ? (forced ?? (menu && g.stage === "action" ? build : null))
       : null;
   const instruction: Record<string, string> = {
-    "setup-settlement": "הצב יישוב התחלתי באחת הנקודות המודגשות",
+    "setup-settlement":
+      g.mode === "cities-knights"
+        ? "הצב מבנה התחלתי בנקודה מודגשת: יישוב בסבב הראשון ועיר בסבב השני"
+        : "הצב יישוב התחלתי באחת הנקודות המודגשות",
     "setup-road": "הצב דרך צמודה ליישוב שהצבת",
     "pre-roll": "גלגל קוביות כדי להתחיל את התור",
-    action: "אפשר לסחור, לבנות או לקנות קלף פיתוח",
+    action:
+      g.mode === "cities-knights"
+        ? "אפשר לסחור, לבנות, לפתח ערים ולהפעיל אבירים וקלפי התקדמות"
+        : "אפשר לסחור, לבנות או לקנות קלף פיתוח",
+    "expansion-choice": "יש להשלים את הבחירה המוצגת",
     discard: "ממתינים להשלכת קלפים מכל מי שמחזיק מעל 7",
     robber: "בחר משושה אחר כדי להזיז את השודד",
     steal: "בחר ממי לגנוב קלף אקראי",
@@ -685,7 +808,10 @@ function Game({
             </div>
             <b>{p.score} נקודות</b>
             <span>
-              קלפים {p.resourceCount} · פיתוח {p.developmentCount}
+              קלפים {p.resourceCount} ·{" "}
+              {g.mode === "cities-knights"
+                ? `התקדמות ${p.progressCount} · מגיני קטאן ${p.defenderVP}`
+                : `פיתוח ${p.developmentCount}`}
             </span>
             <span>
               דרך {p.roadLength} · אבירים {p.knights}
@@ -704,7 +830,10 @@ function Game({
           <div className="turn-banner">
             <span className="eyebrow">
               תור {g.turnNumber} ·{" "}
-              {g.stage.startsWith("setup") ? "הצבה ראשונית" : "משחק"}
+              {g.stage.startsWith("setup") ? "הצבה ראשונית" : "משחק"} ·{" "}
+              {g.mode === "cities-knights"
+                ? "ערים ואבירים · 13 נקודות"
+                : "משחק בסיס · 10 נקודות"}
             </span>
             <h1>
               {g.winner
@@ -733,6 +862,10 @@ function Game({
           </div>
         </main>
         <aside className="sidebar">
+          {g.mode === "cities-knights" && <ExpansionStatus g={g} />}
+          {g.mode === "cities-knights" && (
+            <ExpansionChoice g={g} id={id} send={send} busy={disabled} />
+          )}
           {g.winner && (
             <section className="panel winner">
               <h2>🏆 יש לנו מנצח</h2>
@@ -749,18 +882,20 @@ function Game({
               <span className="count">{total(g.me.resources)} קלפים</span>
             </div>
             <div className="hand">
-              {RESOURCES.map((r) => (
-                <div
-                  key={r}
-                  className="hand-card"
-                  aria-label={`${names[r]} – ${g.me.resources[r]} קלפים`}
-                >
-                  <PlayingCard kind={r} count={g.me.resources[r]} />
-                </div>
-              ))}
+              {(g.mode === "cities-knights" ? MATERIALS : RESOURCES).map(
+                (r) => (
+                  <div
+                    key={r}
+                    className="hand-card"
+                    aria-label={`${names[r]} – ${g.me.resources[r]} קלפים`}
+                  >
+                    <PlayingCard kind={r} count={g.me.resources[r]} />
+                  </div>
+                ),
+              )}
             </div>
             <p className="muted">
-              רק אתה רואה את חלוקת המשאבים ואת קלפי הפיתוח שלך.
+              רק אתה רואה את חלוקת החומרים ואת הקלפים שבידך.
             </p>
           </section>
           {!g.winner && (
@@ -847,25 +982,27 @@ function Game({
                       </button>
                     );
                   })}
-                  <button
-                    disabled={
-                      disabled ||
-                      !active ||
-                      g.stage !== "action" ||
-                      !g.developmentRemaining ||
-                      !canPay(g.me.resources, COSTS.development)
-                    }
-                    onClick={() => send({ type: "buy-development" })}
-                  >
-                    <span>🃏</span>
-                    <span>
-                      <strong>קנה קלף פיתוח</strong>
-                      <small>
-                        {handText(COSTS.development)} · נותרו{" "}
-                        {g.developmentRemaining}
-                      </small>
-                    </span>
-                  </button>
+                  {g.mode !== "cities-knights" && (
+                    <button
+                      disabled={
+                        disabled ||
+                        !active ||
+                        g.stage !== "action" ||
+                        !g.developmentRemaining ||
+                        !canPay(g.me.resources, COSTS.development)
+                      }
+                      onClick={() => send({ type: "buy-development" })}
+                    >
+                      <span>🃏</span>
+                      <span>
+                        <strong>קנה קלף פיתוח</strong>
+                        <small>
+                          {handText(COSTS.development)} · נותרו{" "}
+                          {g.developmentRemaining}
+                        </small>
+                      </span>
+                    </button>
+                  )}
                   <p className="muted">
                     15 דרכים, 5 יישובים ו־4 ערים לכל שחקן. רק מיקומים חוקיים
                     מוצגים בלוח.
@@ -897,6 +1034,9 @@ function Game({
               ))}
             </section>
           )}
+          {g.mode === "cities-knights" && (
+            <ExpansionPanel g={g} id={id} send={send} busy={disabled} />
+          )}
           {g.stage === "action" && (
             <TradePanel
               key={`trade-${g.turnNumber}`}
@@ -906,7 +1046,7 @@ function Game({
               busy={disabled}
             />
           )}
-          {!g.winner && (
+          {!g.winner && g.mode !== "cities-knights" && (
             <DevelopmentPanel
               key={`development-${g.turnNumber}`}
               g={g}
@@ -936,8 +1076,44 @@ function Game({
     </>
   );
 }
+function ModePicker({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: Room["mode"];
+  onChange: (m: Room["mode"]) => void;
+  disabled: boolean;
+}) {
+  return (
+    <fieldset className="mode-picker">
+      <legend>איך משחקים?</legend>
+      <button
+        type="button"
+        className={mode === "base" ? "selected" : ""}
+        aria-pressed={mode === "base"}
+        disabled={disabled}
+        onClick={() => onChange("base")}
+      >
+        <strong>משחק הבסיס</strong>
+        <small>10 נקודות · מסחר, דרכים וקלפי פיתוח</small>
+      </button>
+      <button
+        type="button"
+        className={mode === "cities-knights" ? "selected" : ""}
+        aria-pressed={mode === "cities-knights"}
+        disabled={disabled}
+        onClick={() => onChange("cities-knights")}
+      >
+        <strong>ערים ואבירים</strong>
+        <small>13 נקודות · ברברים, אבירים ופיתוח ערים</small>
+      </button>
+    </fieldset>
+  );
+}
 function App() {
   const [showCards, setShowCards] = useState(false);
+  const [mode, setMode] = useState<Room["mode"]>("base");
   const [connected, setConnected] = useState(socket.connected),
     [id, setId] = useState(""),
     [room, setRoom] = useState<Room | null>(null),
@@ -1060,7 +1236,9 @@ function App() {
       {!room ? (
         <main className="welcome">
           <section>
-            <span className="eyebrow">משחק הבסיס · 3–4 שחקנים</span>
+            <span className="eyebrow">
+              קטאן · משחק הבסיס וערים ואבירים · 3–4 שחקנים
+            </span>
             <h1>
               בונים אי.
               <br />
@@ -1069,7 +1247,9 @@ function App() {
             <p>
               סחרו במשאבים, סללו דרכים והקימו יישובים.
               <br />
-              הראשון שמגיע ל־10 נקודות בתורו מנצח.
+              {mode === "cities-knights"
+                ? "אבירים מגינים על האי. מטרופולינים מובילים ל־13 נקודות."
+                : "הראשון שמגיע ל־10 נקודות בתורו מנצח."}
             </p>
             <div className="feature-list">
               <span>🌾 משאבים ומסחר</span>
@@ -1079,6 +1259,7 @@ function App() {
           </section>
           <section className="panel entry">
             <h2>יוצאים לדרך</h2>
+            <ModePicker mode={mode} onChange={setMode} disabled={busy} />
             <label>
               שם השחקן
               <input
@@ -1091,7 +1272,7 @@ function App() {
             <button
               className="primary"
               disabled={!connected || busy || !name.trim()}
-              onClick={() => request("create-room", { playerName: name })}
+              onClick={() => request("create-room", { playerName: name, mode })}
             >
               צור משחק
             </button>
@@ -1121,6 +1302,11 @@ function App() {
           <span className="eyebrow">מכינים את האי</span>
           <h1>החדר שלכם מוכן</h1>
           <p>שתפו את הקוד עם החברים</p>
+          <ModePicker
+            mode={room.mode}
+            disabled={busy || room.hostId !== id}
+            onChange={(mode) => request("set-mode", { mode })}
+          />
           <strong className="room-code" dir="ltr">
             {room.roomCode}
           </strong>
@@ -1135,7 +1321,7 @@ function App() {
               </li>
             ))}
           </ul>
-          <p>משחק הבסיס מיועד ל־3–4 שחקנים. כל שחקן מצטרף מחלון נפרד.</p>
+          <p>שני המצבים מיועדים ל־3–4 שחקנים. כל שחקן מצטרף מחלון נפרד.</p>
           {room.hostId === id ? (
             <button
               className="primary"
@@ -1179,6 +1365,16 @@ function App() {
             כל אחד. נקודות פיתוח נשארות חסויות. הראשון שמגיע ל־10 בתורו מנצח.
             ההתקדמות נשמרת בשרת; חזרה באותה לשונית משחזרת את המקום.
           </p>
+          <div className="expansion-help">
+            <strong>ערים ואבירים</strong>
+            <p>
+              מתחילים ביישוב ובעיר. ערים מפיקות נייר, בד ומטבעות לצד משאבים.
+              מפתחים מדע, פוליטיקה ומסחר; שער תואם וקובייה אדומה מעניקים קלפי
+              התקדמות. מגייסים אבירים ומפעילים בחיטה להגנת האי. כל שבעה צעדי
+              ספינה מגיעה פלישת ברברים. חומות מוסיפות שני קלפים לסף ההשלכה. אין
+              צבא גדול או קניית קלפי פיתוח. מנצחים עם 13 נקודות בתורך.
+            </p>
+          </div>
           <a
             href="https://www.catan.com/understand-catan/game-rules"
             target="_blank"
@@ -1187,7 +1383,7 @@ function App() {
             חוקי CATAN הרשמיים ↗
           </a>
         </details>
-        <span>משחק חברים עצמאי · ללא הרחבות</span>
+        <span>משחק חברים עצמאי · בסיס או ערים ואבירים</span>
       </footer>
     </div>
   );

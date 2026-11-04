@@ -1,0 +1,217 @@
+.mode-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 16px 0;
+  border: 0;
+  padding: 0;
+}
+.mode-picker legend {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.mode-picker button {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 16px;
+  text-align: right;
+  border: 1px solid #b9c7c6;
+  background: #f4f4eb;
+  color: #23404a;
+}
+.mode-picker button.selected {
+  border: 2px solid #d8a84d;
+  background: #fff1cb;
+}
+.mode-picker small {
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.barbarian-track {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  direction: ltr;
+  margin: 16px 0;
+}
+.barbarian-track span {
+  width: 30px;
+  height: 32px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  background: #dce5e2;
+  color: #435b61;
+  font-size: 13px;
+}
+.barbarian-track .ship {
+  background: #e9bb58;
+  outline: 2px solid #805728;
+  font-size: 23px;
+}
+.barbarian-track .passed {
+  background: #889e9d;
+}
+.expansion-status {
+  border-top: 4px solid #c79a45;
+}
+.expansion-status .eyebrow {
+  color: #785921;
+}
+.expansion-status p {
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+.knight-control {
+  padding: 12px 0;
+  border-bottom: 1px solid #d5dedb;
+}
+.knight-control strong {
+  display: block;
+  margin-bottom: 8px;
+}
+.choice-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-height: 280px;
+  overflow: auto;
+}
+.choice-hand {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.improvement {
+  border-right: 4px solid #9d8140;
+  padding: 12px;
+  margin: 12px 0;
+  background: #f0eee2;
+  border-radius: 6px;
+}
+.improvement.science {
+  border-color: #52795d;
+}
+.improvement.politics {
+  border-color: #4b7192;
+}
+.improvement p {
+  font-size: 0.8rem;
+}
+.levels {
+  display: flex;
+  gap: 5px;
+  margin-top: 9px;
+}
+.levels span {
+  width: 28px;
+  height: 7px;
+  border-radius: 3px;
+  background: #d2d7ce;
+}
+.levels .filled {
+  background: #d0a24c;
+}
+.progress-cards {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.progress-card {
+  overflow: hidden;
+  border: 1px solid #bca96f;
+  background: #faf2dc;
+  border-radius: 10px;
+  padding: 10px;
+  color: #233b42;
+  box-shadow: 0 3px 8px #162d4012;
+}
+.progress-card.science {
+  border-top: 4px solid #52795d;
+}
+.progress-card.politics {
+  border-top: 4px solid #4b7192;
+}
+.progress-card.trade {
+  border-top: 4px solid #c6a348;
+}
+.progress-card h3 {
+  font-size: 1rem;
+  margin: 10px 0 4px;
+}
+.progress-card h3 small {
+  font-size: 0.8rem;
+}
+.progress-card p {
+  font-size: 0.8rem;
+  line-height: 1.6;
+  min-height: 70px;
+}
+.progress-card button {
+  font-size: 0.8rem;
+  padding: 8px;
+  margin-top: 6px;
+  width: 100%;
+}
+.progress-art {
+  height: 100px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+}
+.progress-art .card-illustration {
+  width: 100%;
+  height: 100%;
+}
+.progress-art > span {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  text-align: center;
+  background: #143c42c9;
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 4px;
+}
+.progress-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.progress-form select {
+  max-width: 100%;
+}
+.expansion-choice {
+  margin-bottom: 16px;
+}
+.board .site-number {
+  pointer-events: none;
+  font-size: 9px;
+  font-weight: bold;
+  paint-order: stroke;
+  stroke: #fff7dd;
+  stroke-width: 3px;
+  fill: #193d46;
+}
+.expansion-help {
+  padding: 12px;
+  background: #f5edda;
+  border-radius: 8px;
+}
+.expansion-help p {
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+@media (max-width: 420px) {
+  .progress-cards {
+    grid-template-columns: 1fr;
+  }
+  .mode-picker {
+    gap: 6px;
+  }
+  .mode-picker button {
+    padding: 10px;
+  }
+}

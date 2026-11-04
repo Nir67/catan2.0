@@ -1,4 +1,6 @@
-export type Resource = "wood" | "brick" | "sheep" | "wheat" | "stone";
+export type BaseResource = "wood" | "brick" | "sheep" | "wheat" | "stone";
+export type Resource = BaseResource | "paper" | "cloth" | "coin";
+export type Track = "science" | "politics" | "trade";
 export type Color = "blue" | "red" | "green" | "yellow";
 export type Hand = Record<Resource, number>;
 export type DevelopmentType =
@@ -25,7 +27,7 @@ export type Tile = {
   x: number;
   y: number;
   vertices: string[];
-  resource: Resource | "desert";
+  resource: BaseResource | "desert";
   number: number | null;
 };
 export type PublicPlayer = {
@@ -37,8 +39,51 @@ export type PublicPlayer = {
   developmentCount: number;
   score: number;
   roadLength: number;
+  improvements?: Record<Track, number>;
+  defenderVP?: number;
+  progressCount?: number;
+};
+export type Knight = {
+  vertexId: string;
+  playerId: string;
+  color: Color;
+  level: number;
+  active: boolean;
+  activatedTurn: number;
+  actedTurn: number;
+  promotedTurn: number;
+};
+export type Choice = {
+  playerId: string;
+  title: string;
+  kind?: string;
+  options?: { id: string; label: string }[];
+  required?: number;
+  max?: Hand;
 };
 export type View = {
+  mode: "base" | "cities-knights";
+  targetScore: number;
+  knightPieces?: Knight[];
+  barbarianPosition?: number;
+  barbarianAttacks?: number;
+  eventDie?: string;
+  lastBattle?: { attack: number; defense: number; won: boolean };
+  merchant?: { playerId: string; tileId: number } | null;
+  choice?: Choice | null;
+  progressRemaining?: Record<Track, number>;
+  harbor?: { used: string[] } | null;
+  crane?: boolean;
+  expansionLegal?: {
+    hire: string[];
+    knights: {
+      vertexId: string;
+      promote: boolean;
+      act: boolean;
+      chase: boolean;
+      destinations: string[];
+    }[];
+  };
   players: PublicPlayer[];
   tiles: Tile[];
   bank: Hand;
@@ -48,6 +93,8 @@ export type View = {
     playerId: string;
     color: Color;
     type: "settlement" | "city";
+    wall?: boolean;
+    metropolis?: Track;
   }[];
   robber: number;
   currentPlayerIndex: number;
@@ -66,10 +113,18 @@ export type View = {
   log: string[];
   revision: number;
   developmentRemaining: number;
-  me: { resources: Hand; development: Development[]; ratios: Hand };
+  me: {
+    resources: Hand;
+    development: Development[];
+    ratios: Hand;
+    improvements?: Record<Track, number>;
+    progress?: string[];
+  };
   legal: { roads: string[]; settlements: string[]; cities: string[] };
 };
-export const RESOURCES: Resource[];
+export const RESOURCES: BaseResource[];
+export const COMMODITIES: Resource[];
+export const MATERIALS: Resource[];
 export const COLORS: Color[];
 export const COSTS: Record<
   "road" | "settlement" | "city" | "development",

@@ -71,6 +71,7 @@ function emitRoom(code, room) {
       online: online(p.id),
     })),
     started: !!room.game,
+    mode: room.mode || "base",
   };
   for (const socket of io.sockets.sockets.values())
     if (room.players.some((p) => p.id === socket.data.playerId)) {
@@ -141,13 +142,14 @@ io.on("connection", (socket) => {
     if (entry) emitRoom(...entry);
     return { playerId: socket.data.playerId };
   });
-  on("create-room", ({ playerName }) => {
+  on("create-room", ({ playerName, mode = "base" }) => {
     assert(
       ![...rooms.values()].some((r) =>
         r.players.some((p) => p.id === socket.data.playerId),
       ),
       "כבר הצטרפת לחדר",
     );
+    assert(["base", "cities-knights"].includes(mode), "מצב משחק לא חוקי");
     const name = String(playerName || "").trim();
     assert(name.length > 0 && name.length <= 30, "כתוב שם באורך 1–30 תווים");
     assert(rooms.size < 500, "השרת מלא כרגע");
@@ -159,6 +161,7 @@ io.on("connection", (socket) => {
       hostId: socket.data.playerId,
       players: [{ id: socket.data.playerId, name }],
       game: null,
+      mode,
     });
     return { roomCode: code };
   });
@@ -184,6 +187,16 @@ io.on("connection", (socket) => {
     });
     return {};
   });
+  on("set-mode", ({ mode }) => {
+    const [code, room] = roomFor(socket);
+    assert(
+      room.hostId === socket.data.playerId && !room.game,
+      "רק המארח יכול לשנות מצב לפני תחילת המשחק",
+    );
+    assert(["base", "cities-knights"].includes(mode), "מצב משחק לא חוקי");
+    saveRoom(code, { ...room, mode });
+    return {};
+  });
   on("start-game", () => {
     const [code, room] = roomFor(socket);
     assert(room.hostId === socket.data.playerId, "רק המארח יכול להתחיל");
@@ -192,7 +205,12 @@ io.on("connection", (socket) => {
       room.players.every((p) => online(p.id)),
       "כל השחקנים צריכים להיות מחוברים",
     );
-    saveRoom(code, { ...room, game: createGame(room.players) });
+    saveRoom(code, {
+      ...room,
+      game: createGame(room.players, Math.random, {
+        mode: room.mode || "base",
+      }),
+    });
     return {};
   });
   on("game-action", (action) => {

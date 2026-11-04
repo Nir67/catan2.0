@@ -1,0 +1,8 @@
+Original artwork generated with the built-in ImageGen tool on 2026-11-04.
+
+Saved project asset: `src/assets/cards/expansion-art.png`.
+This original 3×2 atlas illustrates paper, cloth, coins, science, politics and trade. It does not reproduce official CATAN card artwork.
+
+Final prompt:
+
+Use case: illustration-story. Asset type: one game card artwork sprite atlas for an independent medieval island board game. Create a precisely aligned 3 columns by 2 rows contact sheet with six equal rectangular illustrations, no gutters, no borders, no lettering, no typography, no numbers, no logos or watermarks. Overall landscape canvas 1536x1024. Each cell exactly 512x512. Original detailed oil and gouache tabletop card paintings, warm natural light, tactile handcrafted medieval materials, realistic painted objects, rich earthy colors, clear center composition recognizable at thumbnail size. TOP LEFT: a stack of handmade parchment papers and rolled scrolls with quill on a wooden desk, soft green accents. TOP CENTER: folded luxurious woven bolts of fabric and linen at a medieval market, ochre and saffron accents. TOP RIGHT: heaps of silver and gold minted coins, small leather purse on stone ledge, steel blue accents. BOTTOM LEFT: medieval science workshop with books, glass alembic and brass instruments, green accents. BOTTOM CENTER: armored medieval knight standing before a stone fortress with blue banners, politics artwork, blue accents. BOTTOM RIGHT: medieval merchant beside a market stall with weighing scales and goods, golden ochre accents. Each artwork fills its square all the way to edges. This is a sprite sheet of art only, no UI mockup.

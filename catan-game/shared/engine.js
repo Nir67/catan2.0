@@ -1,4 +1,13 @@
+import {
+  initializeExpansion,
+  expansionAction,
+  expansionEvent,
+  expansionProduction,
+  expansionView,
+} from "./expansion.js";
 export const RESOURCES = ["wood", "brick", "sheep", "wheat", "stone"];
+export const COMMODITIES = ["paper", "cloth", "coin"];
+export const MATERIALS = [...RESOURCES, ...COMMODITIES];
 export const COLORS = ["blue", "red", "green", "yellow"];
 export const COSTS = {
   road: { wood: 1, brick: 1 },
@@ -7,8 +16,9 @@ export const COSTS = {
   development: { sheep: 1, wheat: 1, stone: 1 },
 };
 export const emptyHand = (n = 0) =>
-  Object.fromEntries(RESOURCES.map((r) => [r, n]));
-export const total = (hand) => RESOURCES.reduce((n, r) => n + hand[r], 0);
+  Object.fromEntries(MATERIALS.map((r) => [r, RESOURCES.includes(r) ? n : 0]));
+export const total = (hand) =>
+  MATERIALS.reduce((n, r) => n + (hand[r] || 0), 0);
 const check = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -95,7 +105,7 @@ export const PORTS = [0, 3, 7, 10, 13, 17, 20, 23, 27].map((i, n) => ({
 }));
 const adjacentTiles = (a, b) =>
   TILES[a].vertices.filter((v) => TILES[b].vertices.includes(v)).length === 2;
-export function createGame(players, rng = Math.random) {
+export function createGame(players, rng = Math.random, options = {}) {
   check(
     players.length >= 3 && players.length <= 4,
     "משחק הבסיס דורש 3–4 שחקנים",
@@ -157,7 +167,9 @@ export function createGame(players, rng = Math.random) {
           ? redNumbers.pop()
           : others.pop(),
   }));
-  return {
+  const game = {
+    mode: "base",
+    targetScore: 10,
     players: players.map((p, i) => ({
       id: p.id,
       name: p.name,
@@ -202,6 +214,12 @@ export function createGame(players, rng = Math.random) {
     log: ["המשחק התחיל — מציבים יישוב ודרך לפי הסדר"],
     revision: 0,
   };
+  check(
+    !options.mode || ["base", "cities-knights"].includes(options.mode),
+    "מצב משחק לא חוקי",
+  );
+  if (options.mode === "cities-knights") initializeExpansion(game, rng);
+  return game;
 }
 const buildingAt = (g, id) => g.buildings.find((b) => b.vertexId === id);
 const ownRoads = (g, id) => g.roads.filter((r) => r.playerId === id);
@@ -210,10 +228,10 @@ const pieceCount = (g, id, type) =>
     ? ownRoads(g, id).length
     : g.buildings.filter((b) => b.playerId === id && b.type === type).length;
 export const canPay = (hand, cost) =>
-  RESOURCES.every((r) => hand[r] >= (cost[r] || 0));
+  MATERIALS.every((r) => (hand[r] || 0) >= (cost[r] || 0));
 function pay(g, p, cost) {
   check(canPay(p.resources, cost), "אין מספיק משאבים");
-  for (const r of RESOURCES) {
+  for (const r of MATERIALS) {
     const n = cost[r] || 0;
     p.resources[r] -= n;
     g.bank[r] += n;
@@ -224,6 +242,7 @@ export function settlementLocations(g, id, setup = false) {
   return VERTICES.filter(
     (v) =>
       !buildingAt(g, v.id) &&
+      !g.knightPieces?.some((k) => k.vertexId === v.id) &&
       v.neighbors.every((n) => !buildingAt(g, n)) &&
       (setup ||
         ownRoads(g, id).some((r) => em.get(r.edgeId).vertices.includes(v.id))),
@@ -236,7 +255,8 @@ export function roadLocations(g, id, setupVertex = null) {
       !g.roads.some((r) => r.edgeId === e.id) &&
       e.vertices.some((v) => {
         if (setupVertex) return v === setupVertex;
-        const b = buildingAt(g, v);
+        const b =
+          buildingAt(g, v) || g.knightPieces?.find((k) => k.vertexId === v);
         return b
           ? b.playerId === id
           : ownRoads(g, id).some((r) => em.get(r.edgeId).vertices.includes(v));
@@ -252,12 +272,9 @@ export function longestPath(g, id) {
       byVertex.get(v).push(r.edgeId);
     }
   function walk(v, used) {
-    if (
-      used.size &&
-      buildingAt(g, v)?.playerId &&
-      buildingAt(g, v).playerId !== id
-    )
-      return used.size;
+    const occupant =
+      buildingAt(g, v) || g.knightPieces?.find((k) => k.vertexId === v);
+    if (used.size && occupant && occupant.playerId !== id) return used.size;
     let best = used.size;
     for (const edgeId of byVertex.get(v) || [])
       if (!used.has(edgeId)) {
@@ -288,20 +305,30 @@ export function score(g, id, hidden = true) {
       .reduce((n, b) => n + (b.type === "city" ? 2 : 1), 0) +
     (g.longestRoad === id ? 2 : 0) +
     (g.largestArmy === id ? 2 : 0) +
-    (hidden ? p.development.filter((c) => c.type === "victory").length : 0)
+    (hidden ? p.development.filter((c) => c.type === "victory").length : 0) +
+    (p.publicVP || 0) +
+    (p.defenderVP || 0) +
+    g.buildings.filter((b) => b.playerId === id && b.metropolis).length * 2 +
+    (g.merchant?.playerId === id ? 1 : 0)
   );
 }
 function updateAwards(g) {
+  // A Diplomat relocation is a single action: preserve ownership until the
+  // replacement road (or the decision to forgo it) has been resolved.
+  if (g.choices?.some((c) => c.kind === "diplomat-road")) return;
   g.roadLengths = g.players.map((p) => longestPath(g, p.id));
   g.longestRoad = award(g.roadLengths, g.longestRoad, 5, g.players);
-  g.largestArmy = award(
-    g.players.map((p) => p.knights),
-    g.largestArmy,
-    3,
-    g.players,
-  );
+  g.largestArmy =
+    g.mode === "cities-knights"
+      ? null
+      : award(
+          g.players.map((p) => p.knights),
+          g.largestArmy,
+          3,
+          g.players,
+        );
   const id = g.players[g.currentPlayerIndex].id;
-  if (!g.stage.startsWith("setup") && score(g, id) >= 10) {
+  if (!g.stage.startsWith("setup") && score(g, id) >= (g.targetScore || 10)) {
     g.winner = id;
     g.stage = "game-over";
     g.trade = null;
@@ -320,11 +347,11 @@ function bundle(value) {
     "בחר משאבים",
   );
   check(
-    Object.keys(value).every((r) => RESOURCES.includes(r)),
+    Object.keys(value).every((r) => MATERIALS.includes(r)),
     "משאב לא חוקי",
   );
   return Object.fromEntries(
-    RESOURCES.map((r) => {
+    MATERIALS.map((r) => {
       const n = value[r] ?? 0;
       check(Number.isInteger(n) && n >= 0 && n <= 95, "כמות לא חוקית");
       return [r, n];
@@ -332,7 +359,7 @@ function bundle(value) {
   );
 }
 function give(g, p, items) {
-  for (const r of RESOURCES) {
+  for (const r of MATERIALS) {
     const n = items[r] || 0;
     check(g.bank[r] >= n, "אין מספיק משאבים בבנק");
     g.bank[r] -= n;
@@ -340,7 +367,7 @@ function give(g, p, items) {
   }
 }
 function production(g, sum) {
-  for (const r of RESOURCES) {
+  for (const r of MATERIALS) {
     const claims = g.players.map((p) =>
       g.buildings
         .filter((b) => b.playerId === p.id)
@@ -373,6 +400,15 @@ function production(g, sum) {
   }
 }
 export function tradeRatio(g, id, resource) {
+  if (
+    g.mode === "cities-knights" &&
+    (g.fleet?.includes(resource) ||
+      (g.merchant?.playerId === id &&
+        g.tiles[g.merchant.tileId].resource === resource) ||
+      (COMMODITIES.includes(resource) &&
+        g.players.find((p) => p.id === id).improvements.trade >= 3))
+  )
+    return 2;
   const ports = PORTS.filter((port) =>
     port.vertices.some((v) => buildingAt(g, v)?.playerId === id),
   );
@@ -392,7 +428,7 @@ function steal(g, p, victimId, rng) {
     count = total(victim.resources);
   check(count > 0, "אין לשחקן משאבים");
   let pick = Math.floor(rng() * count);
-  for (const r of RESOURCES) {
+  for (const r of MATERIALS) {
     if (pick < victim.resources[r]) {
       victim.resources[r]--;
       p.resources[r]++;
@@ -409,6 +445,7 @@ function perform(g, id, a, rng) {
   check(a && typeof a.type === "string", "פעולה לא חוקית");
   check(!g.winner, "המשחק הסתיים");
   const active = g.players[g.currentPlayerIndex];
+  if (expansionAction(g, p, a, rng, expansionContext)) return;
   if (a.type === "discard") {
     check(
       g.stage === "discard" && g.pendingDiscards[id] > 0,
@@ -421,7 +458,11 @@ function perform(g, id, a, rng) {
     );
     pay(g, p, cards);
     delete g.pendingDiscards[id];
-    if (!Object.keys(g.pendingDiscards).length) g.stage = "robber";
+    if (!Object.keys(g.pendingDiscards).length)
+      g.stage =
+        g.mode === "cities-knights" && !g.barbarianAttacks
+          ? "action"
+          : "robber";
     note(g, `${p.name} השליך/ה ${total(cards)} קלפים`);
     return;
   }
@@ -440,7 +481,7 @@ function perform(g, id, a, rng) {
       canPay(from.resources, offer.give) && canPay(p.resources, offer.want),
       "אין מספיק משאבים לעסקה",
     );
-    for (const r of RESOURCES) {
+    for (const r of MATERIALS) {
       from.resources[r] += offer.want[r] - offer.give[r];
       p.resources[r] += offer.give[r] - offer.want[r];
     }
@@ -457,7 +498,7 @@ function perform(g, id, a, rng) {
       "עסקה דורשת משאבים משני הצדדים",
     );
     check(
-      RESOURCES.every((r) => !(giveCards[r] && want[r])),
+      MATERIALS.every((r) => !(giveCards[r] && want[r])),
       "אין להציע אותו משאב בשני הצדדים",
     );
     check(canPay(p.resources, giveCards), "אין לך את המשאבים המוצעים");
@@ -484,7 +525,10 @@ function perform(g, id, a, rng) {
       vertexId: a.vertexId,
       playerId: id,
       color: p.color,
-      type: "settlement",
+      type:
+        g.mode === "cities-knights" && g.setupIndex >= g.players.length
+          ? "city"
+          : "settlement",
     });
     g.setupVertex = a.vertexId;
     if (g.setupIndex >= g.players.length)
@@ -493,7 +537,10 @@ function perform(g, id, a, rng) {
         if (r !== "desert") give(g, p, { [r]: 1 });
       }
     g.stage = "setup-road";
-    note(g, `${p.name} הציב/ה יישוב התחלתי`);
+    note(
+      g,
+      `${p.name} הציב/ה ${g.buildings.at(-1).type === "city" ? "עיר" : "יישוב"} התחלתי`,
+    );
     return;
   }
   if (g.stage === "setup-road") {
@@ -556,6 +603,7 @@ function perform(g, id, a, rng) {
     "יש להשלים את הפעולה הנוכחית",
   );
   if (a.type === "play-development") {
+    check(g.mode !== "cities-knights", "בהרחבה משתמשים בקלפי התקדמות");
     check(!g.playedDevelopment, "אפשר לשחק קלף פיתוח אחד בתור");
     const index = p.development.findIndex(
       (c) =>
@@ -596,22 +644,15 @@ function perform(g, id, a, rng) {
   }
   if (a.type === "roll-dice") {
     check(g.stage === "pre-roll" && !g.hasRolled, "כבר גלגלת בתור הזה");
-    g.dice = [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
+    g.dice = g.chosenDice || [
+      1 + Math.floor(rng() * 6),
+      1 + Math.floor(rng() * 6),
+    ];
+    delete g.chosenDice;
     g.hasRolled = true;
-    const sum = g.dice[0] + g.dice[1];
-    note(g, `${p.name} גלגל/ה ${sum}`);
-    if (sum === 7) {
-      g.pendingDiscards = Object.fromEntries(
-        g.players
-          .filter((x) => total(x.resources) > 7)
-          .map((x) => [x.id, Math.floor(total(x.resources) / 2)]),
-      );
-      g.returnStage = "action";
-      g.stage = Object.keys(g.pendingDiscards).length ? "discard" : "robber";
-    } else {
-      production(g, sum);
-      g.stage = "action";
-    }
+    note(g, `${p.name} גלגל/ה ${g.dice[0] + g.dice[1]}`);
+    if (g.mode === "cities-knights") expansionEvent(g, rng, expansionContext);
+    else resolveProduction(g, expansionContext);
     return;
   }
   check(g.stage === "action", "צריך לגלגל לפני מסחר או בנייה");
@@ -655,6 +696,7 @@ function perform(g, id, a, rng) {
     return;
   }
   if (a.type === "buy-development") {
+    check(g.mode !== "cities-knights", "בהרחבה אין קניית קלפי פיתוח");
     check(g.deck.length, "קלפי הפיתוח אזלו");
     pay(g, p, COSTS.development);
     p.development.push({ type: g.deck.pop(), boughtTurn: g.turnNumber });
@@ -667,11 +709,11 @@ function perform(g, id, a, rng) {
       want = bundle(a.want);
     check(total(want) > 0, "בחר משאבים לקבלה");
     check(
-      RESOURCES.every((r) => !(giveCards[r] && want[r])),
+      MATERIALS.every((r) => !(giveCards[r] && want[r])),
       "אי אפשר להחליף משאב באותו משאב",
     );
     let credit = 0;
-    for (const r of RESOURCES) {
+    for (const r of MATERIALS) {
       const ratio = tradeRatio(g, id, r);
       check(giveCards[r] % ratio === 0, "כמות ההחלפה לא מתאימה ליחס הנמל");
       credit += giveCards[r] / ratio;
@@ -693,6 +735,13 @@ function perform(g, id, a, rng) {
     return;
   }
   if (a.type === "end-turn") {
+    check(
+      !p.progress || p.progress.length <= 4,
+      "יש להחזיר קלפי התקדמות עודפים לפני סיום התור",
+    );
+    g.fleet = [];
+    g.crane = false;
+    g.harbor = null;
     g.trade = null;
     g.currentPlayerIndex = (g.currentPlayerIndex + 1) % g.players.length;
     g.turnNumber++;
@@ -705,6 +754,11 @@ function perform(g, id, a, rng) {
 }
 export function applyAction(game, id, action, rng = Math.random) {
   const next = structuredClone(game);
+  // Saves created before commodities existed remain valid base games.
+  for (const r of MATERIALS) {
+    next.bank[r] ??= 0;
+    for (const p of next.players) p.resources[r] ??= 0;
+  }
   perform(next, id, action, rng);
   next.revision++;
   updateAwards(next);
@@ -741,7 +795,15 @@ export function viewFor(g, id) {
       id: p.id,
       name: p.name,
       color: p.color,
-      knights: p.knights,
+      knights:
+        g.mode === "cities-knights"
+          ? g.knightPieces
+              .filter((k) => k.playerId === p.id && k.active)
+              .reduce((n, k) => n + k.level, 0)
+          : p.knights,
+      improvements: p.improvements,
+      defenderVP: p.defenderVP,
+      progressCount: p.progress?.length,
       resourceCount: total(p.resources),
       developmentCount: p.development.length,
       score: score(g, p.id, g.winner !== null || p.id === id),
@@ -750,13 +812,55 @@ export function viewFor(g, id) {
     developmentRemaining: deck.length,
     me: me
       ? {
-          resources: { ...me.resources },
+          resources: { ...emptyHand(), ...me.resources },
+          improvements: me.improvements,
+          progress: me.progress,
           development: structuredClone(me.development),
           ratios: Object.fromEntries(
-            RESOURCES.map((r) => [r, tradeRatio(g, id, r)]),
+            MATERIALS.map((r) => [r, tradeRatio(g, id, r)]),
           ),
         }
       : null,
     legal: legalMoves(g, id),
+    ...expansionView(g, id),
   };
+}
+
+const expansionContext = {
+  pay,
+  give,
+  note,
+  names: {
+    wood: "עץ",
+    brick: "לבנים",
+    sheep: "צמר",
+    wheat: "חיטה",
+    stone: "מחצבים",
+  },
+};
+export function resolveProduction(g, ctx = expansionContext) {
+  const sum = g.dice[0] + g.dice[1];
+  if (sum === 7) {
+    g.pendingDiscards = Object.fromEntries(
+      g.players
+        .filter(
+          (p) =>
+            total(p.resources) >
+            7 +
+              2 *
+                g.buildings.filter((b) => b.playerId === p.id && b.wall).length,
+        )
+        .map((p) => [p.id, Math.floor(total(p.resources) / 2)]),
+    );
+    g.returnStage = "action";
+    g.stage = Object.keys(g.pendingDiscards).length
+      ? "discard"
+      : g.mode === "cities-knights" && !g.barbarianAttacks
+        ? "action"
+        : "robber";
+  } else {
+    g.stage = "action";
+    if (g.mode === "cities-knights") expansionProduction(g, sum, ctx);
+    else production(g, sum);
+  }
 }
