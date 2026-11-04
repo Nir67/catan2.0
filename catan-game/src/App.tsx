@@ -18,6 +18,7 @@ import type {
   DevelopmentType,
 } from "../shared/engine.js";
 import "./App.css";
+import { CardArt, PlayingCard, CardGallery } from "./components/Cards";
 import wood from "./assets/wood.png";
 import sheep from "./assets/sheep.png";
 import wheat from "./assets/wheat.png";
@@ -110,9 +111,8 @@ function HandPicker({
       <div className="resource-inputs">
         {RESOURCES.map((r) => (
           <label key={r}>
-            <span>
-              {icons[r]} {names[r]}
-            </span>
+            <CardArt kind={r} />
+            <span>{names[r]}</span>
             <input
               aria-label={`${label} ${names[r]}`}
               type="number"
@@ -407,7 +407,7 @@ function TradePanel({
         <>
           <p className="muted">
             יחסי הבנק שלך:{" "}
-            {RESOURCES.map((r) => `${icons[r]} ${g.me.ratios[r]}:1`).join(
+            {RESOURCES.map((r) => `${names[r]} ${g.me.ratios[r]}:1`).join(
               " · ",
             )}
           </p>
@@ -512,17 +512,27 @@ function DevelopmentPanel({
           return (
             <button
               key={type}
+              className="dev-card-button"
+              aria-label={`${cardNames[type]} – ${hand.length} קלפים`}
               disabled={!playable}
               onClick={() => {
                 if (type === "plenty" || type === "monopoly") setChoice(type);
                 else send({ type: "play-development", card: type });
               }}
             >
-              {cardNames[type]} × {hand.length}
-              {type !== "victory" &&
-                !hand.some((c) => c.boughtTurn < g.turnNumber) && (
-                  <small>זמין מהתור הבא</small>
-                )}
+              <PlayingCard
+                kind={type}
+                count={hand.length}
+                status={
+                  type === "victory"
+                    ? "נקודה חסויה"
+                    : !hand.some((c) => c.boughtTurn < g.turnNumber)
+                      ? "זמין מהתור הבא"
+                      : playable
+                        ? "לחץ כדי לשחק"
+                        : "לא זמין כעת"
+                }
+              />
             </button>
           );
         })}
@@ -740,10 +750,12 @@ function Game({
             </div>
             <div className="hand">
               {RESOURCES.map((r) => (
-                <div key={r} className={`resource ${r}`}>
-                  <span>{icons[r]}</span>
-                  <b>{g.me.resources[r]}</b>
-                  <small>{names[r]}</small>
+                <div
+                  key={r}
+                  className="hand-card"
+                  aria-label={`${names[r]} – ${g.me.resources[r]} קלפים`}
+                >
+                  <PlayingCard kind={r} count={g.me.resources[r]} />
                 </div>
               ))}
             </div>
@@ -925,6 +937,7 @@ function Game({
   );
 }
 function App() {
+  const [showCards, setShowCards] = useState(false);
   const [connected, setConnected] = useState(socket.connected),
     [id, setId] = useState(""),
     [room, setRoom] = useState<Room | null>(null),
@@ -1004,6 +1017,12 @@ function App() {
           CATAN<span>האי מחכה לכם</span>
         </a>
         <div className="room-meta">
+          <button
+            className="quiet cards-preview-button"
+            onClick={() => setShowCards(true)}
+          >
+            הצג את הקלפים
+          </button>
           {room && (
             <span>
               חדר <b dir="ltr">{room.roomCode}</b>
@@ -1145,6 +1164,7 @@ function App() {
       ) : (
         <p className="notice">טוענים את המשחק…</p>
       )}
+      {showCards && <CardGallery onClose={() => setShowCards(false)} />}
       <footer>
         <details>
           <summary>איך משחקים?</summary>

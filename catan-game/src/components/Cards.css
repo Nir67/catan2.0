@@ -1,0 +1,303 @@
+.card-illustration {
+  display: block;
+  aspect-ratio: 2/3;
+  width: 100%;
+  background-size: 500% 200%;
+  background-repeat: no-repeat;
+  background-color: #d2b78a;
+}
+.playing-card {
+  --card-tone: #655544;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border-radius: 9px;
+  padding: 4px;
+  background: linear-gradient(110deg, #f7e9c8, #e2cda1 48%, #f4e5bf);
+  border: 1px solid #c7ac78;
+  box-shadow:
+    0 2px 2px #4a301b22,
+    0 6px 12px #1d242c26,
+    inset 0 0 0 1px #fff5dc;
+  overflow: hidden;
+  color: #42311d;
+  text-align: center;
+}
+.card-print {
+  position: relative;
+  display: block;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid #a48550;
+  background: #d1b281;
+  isolation: isolate;
+}
+.card-print:after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid #f9e8b877;
+  pointer-events: none;
+  border-radius: 2px;
+}
+.card-caption {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  padding: 18px 3px 7px;
+  background: linear-gradient(transparent, #f4e5c1ed 35%, #f7e6c2);
+  display: grid;
+  gap: 3px;
+  z-index: 1;
+}
+.card-caption strong {
+  font-size: 13px;
+  line-height: 1.2;
+  color: #3b301f;
+  text-shadow: 0 1px #fff3d2;
+}
+.card-category {
+  font-size: 8px;
+  color: var(--card-tone);
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.card-quantity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding-top: 5px;
+  color: var(--card-tone);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+.card-quantity small {
+  font-size: 9px;
+  font-weight: 400;
+}
+.card-description {
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 10px 4px 5px;
+  display: block;
+  color: #65543b;
+  text-align: right;
+}
+.card-status {
+  display: block;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 6px 2px 2px;
+  color: #715a35;
+}
+.hand .hand-card {
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 9px;
+  min-width: 0;
+  transition: transform 0.18s;
+  box-shadow: none;
+}
+.hand .hand-card:hover {
+  background: none;
+  transform: translateY(-5px);
+}
+.hand .hand-card:focus-visible {
+  outline-offset: 4px;
+}
+.hand .hand-card .playing-card {
+  height: 100%;
+}
+.hand .card-category {
+  display: none;
+}
+.hand .card-caption {
+  padding: 20px 1px 6px;
+}
+.hand .card-caption strong {
+  font-size: 11px;
+}
+.hand .card-quantity {
+  font-size: 21px;
+}
+.hand .card-quantity small {
+  display: none;
+}
+.hand {
+  align-items: stretch;
+  gap: 7px;
+  padding-top: 6px;
+  padding-bottom: 5px;
+}
+.resource-inputs label > .card-illustration {
+  width: 32px;
+  height: 42px;
+  aspect-ratio: auto;
+  margin: 0 auto 4px;
+  border-radius: 4px;
+  border: 1px solid #b69b6a;
+  box-shadow: 0 2px 4px #203e4220;
+}
+.resource-inputs label > span:not(.card-illustration) {
+  font-size: 10px;
+}
+.dev-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.dev-cards .dev-card-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  border-radius: 9px;
+  min-width: 0;
+  align-self: start;
+  white-space: normal;
+}
+.dev-cards .dev-card-button:hover:not(:disabled) {
+  background: none;
+  transform: translateY(-4px);
+}
+.dev-cards .dev-card-button:disabled {
+  opacity: 1;
+  filter: saturate(0.75);
+  cursor: default;
+}
+.dev-cards .dev-card-button:disabled .card-status {
+  color: #7e735f;
+}
+.dev-cards .dev-card-button .card-caption strong {
+  font-size: 12px;
+}
+.dev-cards .dev-card-button .card-quantity small {
+  margin: 0;
+}
+.cards-preview-button {
+  font-size: 12px;
+}
+.card-gallery {
+  width: min(1050px, 94vw);
+  max-height: 92vh;
+  border: 1px solid #b99a64;
+  border-radius: 20px;
+  padding: 26px;
+  color: #3e3728;
+  background: radial-gradient(ellipse at top, #fff6df, #ecdfc1);
+  box-shadow: 0 24px 90px #00181f88;
+  overflow: auto;
+  text-align: right;
+  direction: rtl;
+}
+.card-gallery::backdrop {
+  background: #092a36cc;
+  backdrop-filter: blur(5px);
+}
+.card-gallery > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+.card-gallery > header button {
+  font-size: 25px;
+  padding: 2px 10px;
+  background: transparent;
+  border-color: #bda878;
+  color: #6b5734;
+}
+.card-gallery .eyebrow {
+  color: #8a6d3b;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.card-gallery h2 {
+  font-size: 29px;
+  margin: 0;
+}
+.card-gallery h3 {
+  font-size: 15px;
+  margin: 23px 0 12px;
+  color: #715b35;
+}
+.gallery-intro,
+.gallery-footnote {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #7b6b4f;
+  margin: 12px 0 0;
+}
+.gallery-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 15px;
+  align-items: start;
+}
+.gallery-cards .playing-card {
+  padding: 6px;
+  border-radius: 11px;
+  box-shadow: 0 5px 14px #44321b25;
+}
+.gallery-cards .card-caption strong {
+  font-size: 17px;
+}
+.gallery-cards .card-category {
+  font-size: 9px;
+}
+.gallery-cards .card-caption {
+  padding-top: 32px;
+  padding-bottom: 12px;
+}
+.gallery-footnote {
+  margin-top: 22px;
+  padding-top: 15px;
+  border-top: 1px solid #bca77b66;
+}
+@media (max-width: 720px) {
+  .card-gallery {
+    padding: 18px;
+    width: 95vw;
+    max-height: 94vh;
+  }
+  .card-gallery h2 {
+    font-size: 24px;
+  }
+  .gallery-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .gallery-cards .playing-card:last-child {
+    grid-column: span 2;
+    width: calc(50% - 6px);
+    justify-self: center;
+  }
+  .gallery-cards .card-caption strong {
+    font-size: 16px;
+  }
+  .card-description {
+    font-size: 12px;
+  }
+  .cards-preview-button {
+    font-size: 11px;
+    padding: 7px 9px;
+  }
+  .room-meta {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 68%;
+  }
+  .hand .card-caption strong {
+    font-size: 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hand .hand-card,
+  .dev-cards .dev-card-button {
+    transition: none;
+  }
+}
