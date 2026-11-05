@@ -27,7 +27,8 @@ export type Tile = {
   x: number;
   y: number;
   vertices: string[];
-  resource: BaseResource | "desert";
+  resource: BaseResource | "desert" | "sea" | "gold";
+  island?: number | null;
   number: number | null;
 };
 export type PublicPlayer = {
@@ -64,6 +65,16 @@ export type Choice = {
 export type View = {
   mode: "base" | "cities-knights";
   targetScore: number;
+  seafarers?: boolean;
+  friendlyRobber?: boolean;
+  pirate?: number | null;
+  geometry?: {
+    vertices: Vertex[];
+    edges: Edge[];
+    ports: (Edge & { resource: Resource | "any" })[];
+  };
+  goldChoice?: { playerId: string; required: number } | null;
+  seaLegal?: { ships: string[]; movable: string[] };
   knightPieces?: Knight[];
   barbarianPosition?: number;
   barbarianAttacks?: number;
@@ -81,13 +92,20 @@ export type View = {
       promote: boolean;
       act: boolean;
       chase: boolean;
+      pirate?: boolean;
       destinations: string[];
     }[];
   };
   players: PublicPlayer[];
   tiles: Tile[];
   bank: Hand;
-  roads: { edgeId: string; playerId: string; color: Color }[];
+  roads: {
+    edgeId: string;
+    playerId: string;
+    color: Color;
+    type?: "ship";
+    builtTurn?: number;
+  }[];
   buildings: {
     vertexId: string;
     playerId: string;
@@ -127,7 +145,7 @@ export const COMMODITIES: Resource[];
 export const MATERIALS: Resource[];
 export const COLORS: Color[];
 export const COSTS: Record<
-  "road" | "settlement" | "city" | "development",
+  "road" | "ship" | "settlement" | "city" | "development",
   Partial<Hand>
 >;
 export const VERTICES: Vertex[];
@@ -137,3 +155,9 @@ export const PORTS: (Edge & { resource: Resource | "any" })[];
 export function emptyHand(n?: number): Hand;
 export function total(hand: Hand): number;
 export function canPay(hand: Hand, cost: Partial<Hand>): boolean;
+
+export function boardFor(g: View): {
+  vertices: Vertex[];
+  edges: Edge[];
+  ports: (Edge & { resource: Resource | "any" })[];
+};

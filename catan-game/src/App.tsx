@@ -4,9 +4,7 @@ import {
   COSTS,
   RESOURCES,
   MATERIALS,
-  VERTICES,
-  EDGES,
-  PORTS,
+  boardFor,
   emptyHand,
   total,
   canPay,
@@ -19,6 +17,7 @@ import type {
   DevelopmentType,
 } from "../shared/engine.js";
 import "./App.css";
+import { SeafarersPanel, ExtraOptions } from "./components/Seafarers";
 import {
   ExpansionPanel,
   ExpansionChoice,
@@ -84,6 +83,8 @@ const pieces = {
 };
 type Build = "road" | "settlement" | "city";
 type Room = {
+  seafarers?: boolean;
+  friendlyRobber?: boolean;
   mode: "base" | "cities-knights";
   roomCode: string;
   hostId: string;
@@ -161,6 +162,7 @@ function Board({
   send: Send;
   disabled: boolean;
 }) {
+  const { vertices: VERTICES, edges: EDGES, ports: PORTS } = boardFor(g);
   const roadIds = new Set(mode === "road" ? g.legal.roads : []);
   const vertexIds = new Set(
     mode === "city"
@@ -178,7 +180,7 @@ function Board({
   return (
     <svg
       className="board"
-      viewBox="60 -30 680 600"
+      viewBox={g.seafarers ? "-110 -175 1020 890" : "60 -30 680 600"}
       role="group"
       aria-label="לוח קטאן"
     >
@@ -197,55 +199,37 @@ function Board({
           </clipPath>
         ))}
       </defs>
-      {PORTS.map((port, i) => {
-        const dx = port.x - 400,
-          dy = port.y - 270,
-          len = Math.hypot(dx, dy),
-          x = port.x + (dx / len) * 31,
-          y = port.y + (dy / len) * 31;
-        return (
-          <g key={i} className="port">
-            <line
-              x1={port.x}
-              y1={port.y}
-              x2={x}
-              y2={y}
-              stroke="#e9d2a1"
-              strokeWidth="3"
-            />
-            <circle cx={x} cy={y} r="20" fill="#fff4da" />
-            <text
-              x={x}
-              y={y - 2}
-              textAnchor="middle"
-              fontSize="12"
-              fill="#263c45"
-            >
-              {port.resource === "any" ? "⚓" : icons[port.resource]}
-            </text>
-            <text
-              x={x}
-              y={y + 12}
-              textAnchor="middle"
-              fontSize="11"
-              fill="#263c45"
-            >
-              {port.resource === "any" ? "3:1" : "2:1"}
-            </text>
-          </g>
-        );
-      })}
       {g.tiles.map((t) => (
         <g key={t.id}>
-          <image
-            href={resourceImages[t.resource]}
-            x={t.x - 55}
-            y={t.y - 63}
-            width="110"
-            height="126"
-            preserveAspectRatio="xMidYMid slice"
-            clipPath={`url(#tile-${t.id})`}
-          />
+          {["sea", "gold"].includes(t.resource) ? (
+            <polygon
+              points={hexPoints(t.x, t.y)}
+              fill={t.resource === "sea" ? "#297b9a" : "#d6b74e"}
+              stroke="#b8d5d0"
+              strokeWidth="2"
+            />
+          ) : (
+            <image
+              href={resourceImages[t.resource as keyof typeof resourceImages]}
+              x={t.x - 55}
+              y={t.y - 63}
+              width="110"
+              height="126"
+              preserveAspectRatio="xMidYMid slice"
+              clipPath={`url(#tile-${t.id})`}
+            />
+          )}
+          {t.resource === "gold" && (
+            <text
+              x={t.x}
+              y={t.y - 15}
+              textAnchor="middle"
+              fontSize="22"
+              fill="#6b491c"
+            >
+              ◆ זהב
+            </text>
+          )}
           <polygon
             points={hexPoints(t.x, t.y)}
             fill="none"
@@ -313,18 +297,91 @@ function Board({
               strokeWidth="4"
               role="button"
               tabIndex={0}
-              aria-label={`העבר שודד למשושה ${t.id + 1}`}
+              aria-label={`העבר ${t.resource === "sea" ? "פיראט" : "שודד"} למשושה ${t.id + 1}`}
               className="target"
-              onClick={() => send({ type: "move-robber", tileId: t.id })}
+              onClick={() =>
+                send({
+                  type: t.resource === "sea" ? "move-pirate" : "move-robber",
+                  tileId: t.id,
+                })
+              }
               onKeyDown={(e) =>
-                keyAction(e, { type: "move-robber", tileId: t.id })
+                keyAction(e, {
+                  type: t.resource === "sea" ? "move-pirate" : "move-robber",
+                  tileId: t.id,
+                })
               }
             />
           )}
         </g>
       ))}
+      {PORTS.map((port, i) => {
+        const dx = port.x - 400,
+          dy = port.y - 270,
+          len = Math.hypot(dx, dy),
+          x = port.x + (dx / len) * 31,
+          y = port.y + (dy / len) * 31;
+        return (
+          <g key={i} className="port">
+            <line
+              x1={port.x}
+              y1={port.y}
+              x2={x}
+              y2={y}
+              stroke="#e9d2a1"
+              strokeWidth="3"
+            />
+            <circle cx={x} cy={y} r="20" fill="#fff4da" />
+            <text
+              x={x}
+              y={y - 2}
+              textAnchor="middle"
+              fontSize="12"
+              fill="#263c45"
+            >
+              {port.resource === "any" ? "⚓" : icons[port.resource]}
+            </text>
+            <text
+              x={x}
+              y={y + 12}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#263c45"
+            >
+              {port.resource === "any" ? "3:1" : "2:1"}
+            </text>
+          </g>
+        );
+      })}
       {g.roads.map((r) => {
         const edge = EDGES.find((e) => e.id === r.edgeId)!;
+        if (r.type === "ship")
+          return (
+            <g
+              key={r.edgeId}
+              aria-label="ספינה"
+              transform={`translate(${edge.x} ${edge.y}) rotate(${edge.angle})`}
+            >
+              <path
+                d="M -23 7 L -14 15 L 15 15 L 24 7 Z"
+                fill={
+                  {
+                    blue: "#438cdf",
+                    red: "#d55a4b",
+                    green: "#4b9f68",
+                    yellow: "#dfb845",
+                  }[r.color]
+                }
+                stroke="white"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M 0 6 L 0 -20 L 17 3 Z"
+                fill="#fff6d9"
+                stroke="#78694b"
+              />
+            </g>
+          );
         return (
           <image
             key={r.edgeId}
@@ -398,6 +455,24 @@ function Board({
             }
           />
         ))}
+      {g.seafarers &&
+        g.mode !== "cities-knights" &&
+        VERTICES.map((v, i) => (
+          <text className="site-number" key={v.id} x={v.x + 11} y={v.y - 12}>
+            {i + 1}
+          </text>
+        ))}
+      {g.seafarers && g.pirate != null && (
+        <text
+          x={g.tiles[g.pirate].x}
+          y={g.tiles[g.pirate].y}
+          textAnchor="middle"
+          fontSize="32"
+          aria-label="פיראט"
+        >
+          ☠
+        </text>
+      )}
       {g.mode === "cities-knights" && (
         <>
           {g.buildings
@@ -832,9 +907,15 @@ function Game({
               תור {g.turnNumber} ·{" "}
               {g.stage.startsWith("setup") ? "הצבה ראשונית" : "משחק"} ·{" "}
               {g.mode === "cities-knights"
-                ? "ערים ואבירים · 13 נקודות"
-                : "משחק בסיס · 10 נקודות"}
+                ? `ערים ואבירים · ${g.targetScore} נקודות`
+                : `משחק בסיס · ${g.targetScore} נקודות`}
             </span>
+            <p>
+              {g.seafarers
+                ? `יורדי הים · יעד ${g.targetScore} נקודות · מפה מקורית`
+                : ""}
+              {g.friendlyRobber ? " · שודד ידידותי" : ""}
+            </p>
             <h1>
               {g.winner
                 ? `${g.players.find((p) => p.id === g.winner)?.name} ניצח/ה! 🏆`
@@ -862,6 +943,9 @@ function Game({
           </div>
         </main>
         <aside className="sidebar">
+          {g.seafarers && (
+            <SeafarersPanel g={g} id={id} send={send} busy={disabled} />
+          )}
           {g.mode === "cities-knights" && <ExpansionStatus g={g} />}
           {g.mode === "cities-knights" && (
             <ExpansionChoice g={g} id={id} send={send} busy={disabled} />
@@ -1114,6 +1198,10 @@ function ModePicker({
 function App() {
   const [showCards, setShowCards] = useState(false);
   const [mode, setMode] = useState<Room["mode"]>("base");
+  const [extras, setExtras] = useState({
+    seafarers: false,
+    friendlyRobber: false,
+  });
   const [connected, setConnected] = useState(socket.connected),
     [id, setId] = useState(""),
     [room, setRoom] = useState<Room | null>(null),
@@ -1236,9 +1324,7 @@ function App() {
       {!room ? (
         <main className="welcome">
           <section>
-            <span className="eyebrow">
-              קטאן · משחק הבסיס וערים ואבירים · 3–4 שחקנים
-            </span>
+            <span className="eyebrow">קטאן והרחבות · 3–4 שחקנים</span>
             <h1>
               בונים אי.
               <br />
@@ -1260,6 +1346,7 @@ function App() {
           <section className="panel entry">
             <h2>יוצאים לדרך</h2>
             <ModePicker mode={mode} onChange={setMode} disabled={busy} />
+            <ExtraOptions value={extras} change={setExtras} disabled={busy} />
             <label>
               שם השחקן
               <input
@@ -1272,7 +1359,9 @@ function App() {
             <button
               className="primary"
               disabled={!connected || busy || !name.trim()}
-              onClick={() => request("create-room", { playerName: name, mode })}
+              onClick={() =>
+                request("create-room", { playerName: name, mode, ...extras })
+              }
             >
               צור משחק
             </button>
@@ -1302,6 +1391,16 @@ function App() {
           <span className="eyebrow">מכינים את האי</span>
           <h1>החדר שלכם מוכן</h1>
           <p>שתפו את הקוד עם החברים</p>
+          <ExtraOptions
+            value={{
+              seafarers: !!room.seafarers,
+              friendlyRobber: !!room.friendlyRobber,
+            }}
+            disabled={busy || room.hostId !== id}
+            change={(extras) =>
+              request("set-mode", { mode: room.mode, ...extras })
+            }
+          />
           <ModePicker
             mode={room.mode}
             disabled={busy || room.hostId !== id}
@@ -1366,6 +1465,17 @@ function App() {
             ההתקדמות נשמרת בשרת; חזרה באותה לשונית משחזרת את המקום.
           </p>
           <div className="expansion-help">
+            <strong>יורדי הים והשודד הידידותי</strong>
+            <p>
+              יורדי הים מוסיפה מפה מקורית עם שלושה איים קטנים: ספינה עולה עץ
+              וצמר, ספינת קצה מתור קודם ניתנת להזזה פעם בתור, ושדות זהב מפיקים
+              משאבים לבחירה. יישוב ראשון שלך בכל אי חדש מעניק שתי נקודות בונוס.
+              ב־7 אפשר להזיז פיראט במקום שודד; הוא חוסם בנייה והזזת ספינות
+              סמוכות. יעד: 14 נקודות, או 17 בשילוב ערים ואבירים. השודד הידידותי
+              הוא וריאנט נפרד שמגן על שחקנים עם שתי נקודות ומטה.
+            </p>
+          </div>
+          <div className="expansion-help">
             <strong>ערים ואבירים</strong>
             <p>
               מתחילים ביישוב ובעיר. ערים מפיקות נייר, בד ומטבעות לצד משאבים.
@@ -1383,7 +1493,7 @@ function App() {
             חוקי CATAN הרשמיים ↗
           </a>
         </details>
-        <span>משחק חברים עצמאי · בסיס או ערים ואבירים</span>
+        <span>משחק חברים עצמאי · בסיס והרחבות</span>
       </footer>
     </div>
   );

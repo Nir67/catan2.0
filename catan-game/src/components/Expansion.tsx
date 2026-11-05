@@ -3,8 +3,7 @@ import type { View, Resource, Track, Hand } from "../../shared/engine.js";
 import {
   MATERIALS,
   RESOURCES,
-  VERTICES,
-  EDGES,
+  boardFor,
   emptyHand,
   total,
   canPay,
@@ -30,8 +29,8 @@ const trackNames: Record<Track, string> = {
   politics: "פוליטיקה",
   trade: "מסחר",
 };
-const siteName = (id: string) =>
-  `צומת ${VERTICES.findIndex((v) => v.id === id) + 1}`;
+const siteName = (g: View, id: string) =>
+  `צומת ${boardFor(g).vertices.findIndex((v) => v.id === id) + 1}`;
 function Select({
   label,
   value,
@@ -139,7 +138,7 @@ function ProgressCard({ card, g, id, send, busy }: Props & { card: string }) {
     !busy &&
     (card === "alchemist" ? g.stage === "pre-roll" : g.stage === "action");
   const sites = (ids: string[]) =>
-    ids.map((v) => ({ id: v, label: siteName(v) }));
+    ids.map((v) => ({ id: v, label: siteName(g, v) }));
   const ownCities = g.buildings.filter(
     (b) => b.playerId === id && b.type === "city",
   );
@@ -181,7 +180,7 @@ function ProgressCard({ card, g, id, send, busy }: Props & { card: string }) {
       )
       .map((t) => ({
         id: String(t.id),
-        label: `משושה ${t.id + 1}: ${t.resource === "desert" ? "מדבר" : materialNames[t.resource]} · ${t.number ?? "—"}`,
+        label: `משושה ${t.id + 1}: ${["desert", "sea", "gold"].includes(t.resource) ? "מדבר" : materialNames[t.resource as Resource]} · ${t.number ?? "—"}`,
       }));
   } else if (
     ["resource-monopoly", "trade-monopoly", "merchant-fleet"].includes(card)
@@ -203,7 +202,7 @@ function ProgressCard({ card, g, id, send, busy }: Props & { card: string }) {
     label = "דרך פתוחה";
     options = g.roads.map((r) => ({
       id: r.edgeId,
-      label: `דרך ${EDGES.findIndex((e) => e.id === r.edgeId) + 1} · ${g.players.find((p) => p.id === r.playerId)?.name}`,
+      label: `דרך ${boardFor(g).edges.findIndex((e) => e.id === r.edgeId) + 1} · ${g.players.find((p) => p.id === r.playerId)?.name}`,
     }));
   }
   const needsChoice = [
@@ -403,7 +402,7 @@ export function ExpansionPanel(props: Props) {
           change={setHire}
           options={g.expansionLegal!.hire.map((v) => ({
             id: v,
-            label: siteName(v),
+            label: siteName(g, v),
           }))}
         />
         <button
@@ -424,7 +423,7 @@ export function ExpansionPanel(props: Props) {
           return (
             <div className="knight-control" key={k.vertexId}>
               <strong>
-                {siteName(k.vertexId)} · דרגה {k.level} ·{" "}
+                {siteName(g, k.vertexId)} · דרגה {k.level} ·{" "}
                 {k.active ? "פעיל" : "לא פעיל"}
               </strong>
               <div className="button-row">
@@ -460,17 +459,27 @@ export function ExpansionPanel(props: Props) {
                 >
                   גרש שודד
                 </button>
+                {g.seafarers && (
+                  <button
+                    disabled={disabled || !legal.pirate}
+                    onClick={() =>
+                      send({ type: "chase-pirate", vertexId: k.vertexId })
+                    }
+                  >
+                    גרש פיראט
+                  </button>
+                )}
               </div>
               {legal.destinations.length > 0 && (
                 <>
                   <Select
-                    label={`יעד לאביר ב${siteName(k.vertexId)}`}
+                    label={`יעד לאביר ב${siteName(g, k.vertexId)}`}
                     value={dest}
                     change={setDest}
                     options={legal.destinations.map((v) => ({
                       id: v,
                       label:
-                        siteName(v) +
+                        siteName(g, v) +
                         (g.knightPieces!.some((x) => x.vertexId === v)
                           ? " · דחיקת יריב"
                           : ""),
@@ -501,7 +510,7 @@ export function ExpansionPanel(props: Props) {
           options={ownCities.map((b) => ({
             id: b.vertexId,
             label:
-              siteName(b.vertexId) +
+              siteName(g, b.vertexId) +
               (b.metropolis ? ` · מטרופולין ${trackNames[b.metropolis]}` : "") +
               (b.wall ? " · חומה" : ""),
           }))}

@@ -1,4 +1,14 @@
 import {
+  initializeSeafarers,
+  shipLocations,
+  seaAction,
+  seaView,
+  goldProduction,
+  resumeGold,
+  islandBonus,
+  robberProtected,
+} from "./seafarers.js";
+import {
   initializeExpansion,
   expansionAction,
   expansionEvent,
@@ -11,6 +21,7 @@ export const MATERIALS = [...RESOURCES, ...COMMODITIES];
 export const COLORS = ["blue", "red", "green", "yellow"];
 export const COSTS = {
   road: { wood: 1, brick: 1 },
+  ship: { wood: 1, sheep: 1 },
   settlement: { wood: 1, brick: 1, sheep: 1, wheat: 1 },
   city: { wheat: 2, stone: 3 },
   development: { sheep: 1, wheat: 1, stone: 1 },
@@ -103,6 +114,10 @@ export const PORTS = [0, 3, 7, 10, 13, 17, 20, 23, 27].map((i, n) => ({
     "stone",
   ][n],
 }));
+export const boardFor = (g) =>
+  g.geometry || { vertices: VERTICES, edges: EDGES, ports: PORTS };
+const vertexAt = (g, id) => boardFor(g).vertices.find((v) => v.id === id);
+const edgeAt = (g, id) => boardFor(g).edges.find((e) => e.id === id);
 const adjacentTiles = (a, b) =>
   TILES[a].vertices.filter((v) => TILES[b].vertices.includes(v)).length === 2;
 export function createGame(players, rng = Math.random, options = {}) {
@@ -219,13 +234,15 @@ export function createGame(players, rng = Math.random, options = {}) {
     "מצב משחק לא חוקי",
   );
   if (options.mode === "cities-knights") initializeExpansion(game, rng);
+  game.friendlyRobber = !!options.friendlyRobber;
+  if (options.seafarers) initializeSeafarers(game);
   return game;
 }
 const buildingAt = (g, id) => g.buildings.find((b) => b.vertexId === id);
 const ownRoads = (g, id) => g.roads.filter((r) => r.playerId === id);
 const pieceCount = (g, id, type) =>
   type === "road"
-    ? ownRoads(g, id).length
+    ? ownRoads(g, id).filter((r) => r.type !== "ship").length
     : g.buildings.filter((b) => b.playerId === id && b.type === type).length;
 export const canPay = (hand, cost) =>
   MATERIALS.every((r) => (hand[r] || 0) >= (cost[r] || 0));
@@ -239,48 +256,70 @@ function pay(g, p, cost) {
 }
 export function settlementLocations(g, id, setup = false) {
   if (pieceCount(g, id, "settlement") >= 5) return [];
-  return VERTICES.filter(
-    (v) =>
-      !buildingAt(g, v.id) &&
-      !g.knightPieces?.some((k) => k.vertexId === v.id) &&
-      v.neighbors.every((n) => !buildingAt(g, n)) &&
-      (setup ||
-        ownRoads(g, id).some((r) => em.get(r.edgeId).vertices.includes(v.id))),
-  ).map((v) => v.id);
+  return boardFor(g)
+    .vertices.filter(
+      (v) =>
+        v.tiles.some((i) => !["sea"].includes(g.tiles[i].resource)) &&
+        (!setup ||
+          !g.seafarers ||
+          v.tiles.some((i) => g.tiles[i].island === 0)) &&
+        !buildingAt(g, v.id) &&
+        !g.knightPieces?.some((k) => k.vertexId === v.id) &&
+        v.neighbors.every((n) => !buildingAt(g, n)) &&
+        (setup ||
+          ownRoads(g, id).some((r) =>
+            edgeAt(g, r.edgeId).vertices.includes(v.id),
+          )),
+    )
+    .map((v) => v.id);
 }
 export function roadLocations(g, id, setupVertex = null) {
   if (pieceCount(g, id, "road") >= 15) return [];
-  return EDGES.filter(
-    (e) =>
-      !g.roads.some((r) => r.edgeId === e.id) &&
-      e.vertices.some((v) => {
-        if (setupVertex) return v === setupVertex;
-        const b =
-          buildingAt(g, v) || g.knightPieces?.find((k) => k.vertexId === v);
-        return b
-          ? b.playerId === id
-          : ownRoads(g, id).some((r) => em.get(r.edgeId).vertices.includes(v));
-      }),
-  ).map((e) => e.id);
+  return boardFor(g)
+    .edges.filter(
+      (e) =>
+        (!g.seafarers || e.tiles.some((i) => g.tiles[i].resource !== "sea")) &&
+        !g.roads.some((r) => r.edgeId === e.id) &&
+        e.vertices.some((v) => {
+          if (setupVertex) return v === setupVertex;
+          const b =
+            buildingAt(g, v) || g.knightPieces?.find((k) => k.vertexId === v);
+          return b
+            ? b.playerId === id
+            : ownRoads(g, id).some(
+                (r) =>
+                  r.type !== "ship" && edgeAt(g, r.edgeId).vertices.includes(v),
+              );
+        }),
+    )
+    .map((e) => e.id);
 }
 export function longestPath(g, id) {
   const roads = ownRoads(g, id);
   const byVertex = new Map();
   for (const r of roads)
-    for (const v of em.get(r.edgeId).vertices) {
+    for (const v of edgeAt(g, r.edgeId).vertices) {
       if (!byVertex.has(v)) byVertex.set(v, []);
       byVertex.get(v).push(r.edgeId);
     }
-  function walk(v, used) {
+  function walk(v, used, previousType = null) {
     const occupant =
       buildingAt(g, v) || g.knightPieces?.find((k) => k.vertexId === v);
     if (used.size && occupant && occupant.playerId !== id) return used.size;
     let best = used.size;
     for (const edgeId of byVertex.get(v) || [])
       if (!used.has(edgeId)) {
-        const next = em.get(edgeId).vertices.find((x) => x !== v);
+        const route = roads.find((r) => r.edgeId === edgeId);
+        const routeType = route.type || "road";
+        if (
+          previousType &&
+          previousType !== routeType &&
+          buildingAt(g, v)?.playerId !== id
+        )
+          continue;
+        const next = edgeAt(g, edgeId).vertices.find((x) => x !== v);
         used.add(edgeId);
-        best = Math.max(best, walk(next, used));
+        best = Math.max(best, walk(next, used, routeType));
         used.delete(edgeId);
       }
     return best;
@@ -309,7 +348,8 @@ export function score(g, id, hidden = true) {
     (p.publicVP || 0) +
     (p.defenderVP || 0) +
     g.buildings.filter((b) => b.playerId === id && b.metropolis).length * 2 +
-    (g.merchant?.playerId === id ? 1 : 0)
+    (g.merchant?.playerId === id ? 1 : 0) +
+    (p.discoveredIslands?.length || 0) * 2
   );
 }
 function updateAwards(g) {
@@ -374,14 +414,12 @@ function production(g, sum) {
         .reduce(
           (n, b) =>
             n +
-            vm
-              .get(b.vertexId)
-              .tiles.filter(
-                (i) =>
-                  i !== g.robber &&
-                  g.tiles[i].number === sum &&
-                  g.tiles[i].resource === r,
-              ).length *
+            vertexAt(g, b.vertexId).tiles.filter(
+              (i) =>
+                i !== g.robber &&
+                g.tiles[i].number === sum &&
+                g.tiles[i].resource === r,
+            ).length *
               (b.type === "city" ? 2 : 1),
           0,
         ),
@@ -409,7 +447,7 @@ export function tradeRatio(g, id, resource) {
         g.players.find((p) => p.id === id).improvements.trade >= 3))
   )
     return 2;
-  const ports = PORTS.filter((port) =>
+  const ports = boardFor(g).ports.filter((port) =>
     port.vertices.some((v) => buildingAt(g, v)?.playerId === id),
   );
   return ports.some((p) => p.resource === resource)
@@ -419,6 +457,7 @@ export function tradeRatio(g, id, resource) {
       : 4;
 }
 function finishRobber(g) {
+  delete g.requiredRobberTarget;
   g.stage = g.returnStage;
   g.victims = [];
 }
@@ -445,6 +484,7 @@ function perform(g, id, a, rng) {
   check(a && typeof a.type === "string", "פעולה לא חוקית");
   check(!g.winner, "המשחק הסתיים");
   const active = g.players[g.currentPlayerIndex];
+  if (seaAction(g, p, a, rng, expansionContext)) return;
   if (expansionAction(g, p, a, rng, expansionContext)) return;
   if (a.type === "discard") {
     check(
@@ -532,9 +572,9 @@ function perform(g, id, a, rng) {
     });
     g.setupVertex = a.vertexId;
     if (g.setupIndex >= g.players.length)
-      for (const tileId of vm.get(a.vertexId).tiles) {
+      for (const tileId of vertexAt(g, a.vertexId).tiles) {
         const r = g.tiles[tileId].resource;
-        if (r !== "desert") give(g, p, { [r]: 1 });
+        if (RESOURCES.includes(r)) give(g, p, { [r]: 1 });
       }
     g.stage = "setup-road";
     note(
@@ -550,21 +590,24 @@ function perform(g, id, a, rng) {
       "יש להציב דרך צמודה ליישוב שהצבת",
     );
     g.roads.push({ edgeId: a.edgeId, playerId: id, color: p.color });
-    g.setupIndex++;
-    if (g.setupIndex === g.setupOrder.length) {
-      g.currentPlayerIndex = 0;
-      g.stage = "pre-roll";
-      note(g, "ההצבה הסתיימה — מתחילים לגלגל");
-    } else {
-      g.currentPlayerIndex = g.setupOrder[g.setupIndex];
-      g.stage = "setup-settlement";
-    }
+    advanceSetup(g);
     return;
   }
   if (a.type === "move-robber") {
-    check(g.stage === "robber", "אי אפשר להזיז את השודד כעת");
     check(
-      Number.isInteger(a.tileId) && g.tiles[a.tileId] && a.tileId !== g.robber,
+      g.stage === "robber" && g.requiredRobberTarget !== "pirate",
+      "אי אפשר להזיז את השודד כעת",
+    );
+    check(
+      Number.isInteger(a.tileId) &&
+        g.tiles[a.tileId] &&
+        g.tiles[a.tileId].resource !== "sea" &&
+        a.tileId !== g.robber &&
+        !g.buildings.some(
+          (b) =>
+            g.tiles[a.tileId].vertices.includes(b.vertexId) &&
+            robberProtected(g, b.playerId),
+        ),
       "בחר משושה אחר",
     );
     g.robber = a.tileId;
@@ -576,7 +619,7 @@ function perform(g, id, a, rng) {
           g.buildings.some(
             (b) =>
               b.playerId === v.id &&
-              TILES[a.tileId].vertices.includes(b.vertexId),
+              g.tiles[a.tileId].vertices.includes(b.vertexId),
           ),
       )
       .map((v) => v.id);
@@ -595,7 +638,11 @@ function perform(g, id, a, rng) {
     check(roadLocations(g, id).includes(a.edgeId), "אי אפשר לבנות דרך כאן");
     g.roads.push({ edgeId: a.edgeId, playerId: id, color: p.color });
     g.freeRoads--;
-    if (!g.freeRoads || !roadLocations(g, id).length) g.stage = g.returnStage;
+    if (
+      !g.freeRoads ||
+      !(roadLocations(g, id).length || shipLocations(g, id).length)
+    )
+      g.stage = g.returnStage;
     return;
   }
   check(
@@ -627,10 +674,15 @@ function perform(g, id, a, rng) {
           other.resources[a.resource] = 0;
         }
     } else if (a.card === "road-building") {
-      check(roadLocations(g, id).length, "אין מקום או חלקי דרך לבנייה");
+      check(
+        roadLocations(g, id).length || shipLocations(g, id).length,
+        "אין מקום או חלקי דרך לבנייה",
+      );
       g.returnStage = g.stage;
       g.stage = "road-building";
-      g.freeRoads = Math.min(2, 15 - pieceCount(g, id, "road"));
+      g.freeRoads = g.seafarers
+        ? 2
+        : Math.min(2, 15 - pieceCount(g, id, "road"));
     } else if (a.card === "knight") {
       p.knights++;
       g.returnStage = g.stage;
@@ -673,6 +725,7 @@ function perform(g, id, a, rng) {
         "היישוב חייב להתחבר לדרך שלך ולשמור מרחק",
       );
       pay(g, p, COSTS.settlement);
+      islandBonus(g, id, a.vertexId);
       g.buildings.push({
         vertexId: a.vertexId,
         playerId: id,
@@ -760,6 +813,7 @@ export function applyAction(game, id, action, rng = Math.random) {
     for (const p of next.players) p.resources[r] ??= 0;
   }
   perform(next, id, action, rng);
+  resumeGold(next);
   next.revision++;
   updateAwards(next);
   return next;
@@ -823,10 +877,25 @@ export function viewFor(g, id) {
       : null,
     legal: legalMoves(g, id),
     ...expansionView(g, id),
+    ...seaView(g, id),
   };
 }
 
+function advanceSetup(g) {
+  g.setupIndex++;
+  if (g.setupIndex === g.setupOrder.length) {
+    g.currentPlayerIndex = 0;
+    g.stage = "pre-roll";
+    note(g, "ההצבה הסתיימה — מתחילים לגלגל");
+  } else {
+    g.currentPlayerIndex = g.setupOrder[g.setupIndex];
+    g.stage = "setup-settlement";
+  }
+}
 const expansionContext = {
+  advanceSetup,
+  steal,
+  roadLocations,
   pay,
   give,
   note,
@@ -862,5 +931,7 @@ export function resolveProduction(g, ctx = expansionContext) {
     g.stage = "action";
     if (g.mode === "cities-knights") expansionProduction(g, sum, ctx);
     else production(g, sum);
+    goldProduction(g, sum);
+    resumeGold(g);
   }
 }

@@ -1,8 +1,7 @@
+import { shipLocations, robberProtected } from "./seafarers.js";
 // Cities & Knights, 2020 English rules. All choices are validated by the server.
 import {
-  VERTICES,
-  EDGES,
-  TILES,
+  boardFor,
   RESOURCES,
   MATERIALS,
   COMMODITIES,
@@ -103,27 +102,38 @@ export const PROGRESS = {
 const check = (ok, text) => {
   if (!ok) throw new Error(text);
 };
-const vertex = (id) => VERTICES.find((v) => v.id === id);
-const edge = (id) => EDGES.find((e) => e.id === id);
+const vertex = (g, id) => boardFor(g).vertices.find((v) => v.id === id);
+const edge = (g, id) => boardFor(g).edges.find((e) => e.id === id);
 const building = (g, id) => g.buildings.find((b) => b.vertexId === id);
 const knight = (g, id) => g.knightPieces.find((k) => k.vertexId === id);
 const occupied = (g, id) => building(g, id) || knight(g, id);
 const cities = (g, id) =>
   g.buildings.filter((b) => b.playerId === id && b.type === "city");
 const ownsRoad = (g, id, v) =>
-  g.roads.some((r) => r.playerId === id && edge(r.edgeId).vertices.includes(v));
+  g.roads.some(
+    (r) => r.playerId === id && edge(g, r.edgeId).vertices.includes(v),
+  );
 const available = (g, id, level) =>
   g.knightPieces.filter((k) => k.playerId === id && k.level === level).length <
   2;
 export const knightSites = (g, id) =>
-  VERTICES.filter((v) => !occupied(g, v.id) && ownsRoad(g, id, v.id)).map(
-    (v) => v.id,
-  );
+  boardFor(g)
+    .vertices.filter(
+      (v) =>
+        v.tiles.some((i) => g.tiles[i].resource !== "sea") &&
+        !occupied(g, v.id) &&
+        ownsRoad(g, id, v.id),
+    )
+    .map((v) => v.id);
 export function connectedSites(g, id, start) {
-  const seen = new Set([start]),
-    queue = [start];
+  const queue = [{ v: start, type: null }],
+    seen = new Set(),
+    dest = new Set();
   while (queue.length) {
-    const v = queue.shift();
+    const { v, type } = queue.shift(),
+      key = v + ":" + type;
+    if (seen.has(key)) continue;
+    seen.add(key);
     if (
       v !== start &&
       occupied(g, v)?.playerId &&
@@ -131,15 +141,19 @@ export function connectedSites(g, id, start) {
     )
       continue;
     for (const r of g.roads.filter(
-      (r) => r.playerId === id && edge(r.edgeId).vertices.includes(v),
-    ))
-      for (const n of edge(r.edgeId).vertices)
-        if (!seen.has(n)) {
-          seen.add(n);
-          queue.push(n);
+      (r) => r.playerId === id && edge(g, r.edgeId).vertices.includes(v),
+    )) {
+      const nextType = r.type || "road";
+      if (type && nextType !== type && building(g, v)?.playerId !== id)
+        continue;
+      for (const n of edge(g, r.edgeId).vertices)
+        if (n !== v) {
+          dest.add(n);
+          queue.push({ v: n, type: nextType });
         }
+    }
   }
-  return [...seen].filter((v) => v !== start);
+  return [...dest].filter((v) => v !== start);
 }
 const canPromote = (g, p, k) =>
   k.playerId === p.id &&
@@ -163,9 +177,12 @@ const activate = (g, k) => {
   k.activatedTurn = g.turnNumber;
 };
 const option = (id, label = id) => ({ id: String(id), label: String(label) });
-const sites = (ids) =>
+const sites = (g, ids) =>
   ids.map((id) =>
-    option(id, `צומת ${VERTICES.findIndex((v) => v.id === id) + 1}`),
+    option(
+      id,
+      `צומת ${boardFor(g).vertices.findIndex((v) => v.id === id) + 1}`,
+    ),
   );
 const enqueue = (g, task) => g.choices.push(task);
 const choose = (g, playerId, kind, title, options, extra = {}) => {
@@ -256,7 +273,7 @@ function displace(g, k) {
     k.playerId,
     "relocate",
     "האביר נדחק: בחר צומת פנוי ברשת הדרכים שלך",
-    sites(dest),
+    sites(g, dest),
     { knight: k },
   );
 }
@@ -323,6 +340,7 @@ export function expansionEvent(g, rng, ctx) {
           "pillage",
           "הברברים ניצחו: בחר עיר שתהפוך ליישוב",
           sites(
+            g,
             cities(g, p.id)
               .filter((b) => !b.metropolis)
               .map((b) => b.vertexId),
@@ -340,6 +358,20 @@ export function expansionEvent(g, rng, ctx) {
 }
 export function expansionProduction(g, sum, ctx) {
   const received = new Set();
+  for (const p of g.players)
+    if (
+      g.buildings.some(
+        (b) =>
+          b.playerId === p.id &&
+          vertex(g, b.vertexId).tiles.some(
+            (i) =>
+              i !== g.robber &&
+              g.tiles[i].resource === "gold" &&
+              g.tiles[i].number === sum,
+          ),
+      )
+    )
+      received.add(p.id);
   for (const r of MATERIALS) {
     const claims = g.players.map((p) =>
       g.buildings
@@ -347,7 +379,7 @@ export function expansionProduction(g, sum, ctx) {
         .reduce(
           (n, b) =>
             n +
-            vertex(b.vertexId).tiles.reduce((s, i) => {
+            vertex(g, b.vertexId).tiles.reduce((s, i) => {
               const t = g.tiles[i];
               if (i === g.robber || t.number !== sum) return s;
               const commodity = {
@@ -504,7 +536,11 @@ function progressEffect(g, p, a, rng, ctx) {
     ctx.pay(g, p, { wheat: 1, stone: 2 });
     b.type = "city";
   } else if (type === "road-building") {
-    check(roadLocations(g, p.id).length, "אין מיקום לדרך");
+    check(
+      roadLocations(g, p.id).length ||
+        (g.seafarers && shipLocations(g, p.id).length),
+      "אין מיקום לדרך",
+    );
     g.freeRoads = 2;
     g.returnStage = "action";
     g.stage = "road-building";
@@ -525,7 +561,17 @@ function progressEffect(g, p, a, rng, ctx) {
     for (const k of ownKnights) if (!k.active) activate(g, k);
   } else if (type === "bishop") {
     check(g.barbarianAttacks > 0, "השודד נשאר במדבר עד הפלישה הראשונה");
-    check(g.tiles[a.tileId] && a.tileId !== g.robber, "בחר משושה אחר");
+    check(
+      g.tiles[a.tileId] &&
+        g.tiles[a.tileId].resource !== "sea" &&
+        a.tileId !== g.robber &&
+        !g.buildings.some(
+          (b) =>
+            g.tiles[a.tileId].vertices.includes(b.vertexId) &&
+            robberProtected(g, b.playerId),
+        ),
+      "בחר משושה אחר",
+    );
     g.robber = a.tileId;
     for (const victim of g.players.filter(
       (x) =>
@@ -534,13 +580,13 @@ function progressEffect(g, p, a, rng, ctx) {
         g.buildings.some(
           (b) =>
             b.playerId === x.id &&
-            TILES[a.tileId].vertices.includes(b.vertexId),
+            g.tiles[a.tileId].vertices.includes(b.vertexId),
         ),
     ))
       randomTheft(g, p, victim, rng);
   } else if (type === "merchant") {
     check(
-      g.tiles[a.tileId]?.resource !== "desert" &&
+      RESOURCES.includes(g.tiles[a.tileId]?.resource) &&
         g.buildings.some(
           (b) =>
             b.playerId === p.id &&
@@ -628,7 +674,10 @@ function progressEffect(g, p, a, rng, ctx) {
       other.id,
       "desert-remove",
       "עריק: בחר אביר להסרה",
-      sites(ks.map((k) => k.vertexId)),
+      sites(
+        g,
+        ks.map((k) => k.vertexId),
+      ),
       { recipient: p.id },
     );
   } else if (type === "intrigue") {
@@ -642,26 +691,43 @@ function progressEffect(g, p, a, rng, ctx) {
     const r = g.roads.find((r) => r.edgeId === a.edgeId);
     check(
       r &&
-        edge(r.edgeId).vertices.some(
+        edge(g, r.edgeId).vertices.some(
           (v) =>
             occupied(g, v)?.playerId !== r.playerId &&
             !g.roads.some(
               (x) =>
                 x !== r &&
                 x.playerId === r.playerId &&
-                edge(x.edgeId).vertices.includes(v),
+                edge(g, x.edgeId).vertices.includes(v),
             ),
         ),
       "הדרך אינה פתוחה",
     );
+    check(
+      r.type !== "ship" || !edge(g, r.edgeId).tiles.includes(g.pirate),
+      "אי אפשר להזיז ספינה ליד הפיראט",
+    );
     g.roads = g.roads.filter((x) => x !== r);
     if (r.playerId === p.id)
-      choose(g, p.id, "diplomat-road", "בחר מיקום חדש לדרך, או ותר", [
-        option("skip", "וותר"),
-        ...roadLocations(g, p.id).map((e) =>
-          option(e, `דרך ${EDGES.findIndex((x) => x.id === e) + 1}`),
-        ),
-      ]);
+      choose(
+        g,
+        p.id,
+        "diplomat-road",
+        "בחר מיקום חדש לדרך, או ותר",
+        [
+          option("skip", "וותר"),
+          ...(r.type === "ship"
+            ? shipLocations(g, p.id)
+            : roadLocations(g, p.id)
+          ).map((e) =>
+            option(
+              e,
+              `דרך ${boardFor(g).edges.findIndex((x) => x.id === e) + 1}`,
+            ),
+          ),
+        ],
+        { routeType: r.type },
+      );
   } else if (type === "commercial-harbor") {
     g.harbor = { used: [] };
   } else throw new Error("קלף לא מוכר");
@@ -718,7 +784,7 @@ function settleChoice(g, p, a, ctx) {
         c.recipient,
         "desert-place",
         "הצב אביר חלופי",
-        [option("skip", "וותר"), ...sites(knightSites(g, c.recipient))],
+        [option("skip", "וותר"), ...sites(g, knightSites(g, c.recipient))],
         { level, active: k.active },
       );
   } else if (c.kind === "desert-place" && value !== "skip")
@@ -734,7 +800,14 @@ function settleChoice(g, p, a, ctx) {
       promotedTurn: -1,
     });
   else if (c.kind === "diplomat-road" && value !== "skip")
-    g.roads.push({ edgeId: value, playerId: p.id, color: p.color });
+    g.roads.push({
+      edgeId: value,
+      playerId: p.id,
+      color: p.color,
+      ...(c.routeType === "ship"
+        ? { type: "ship", builtTurn: g.turnNumber }
+        : {}),
+    });
   if (!g.choices.length) {
     g.stage = "action";
     if (g.pendingProduction) {
@@ -768,6 +841,7 @@ export function expansionAction(g, p, a, rng, ctx) {
     "promote-knight",
     "move-knight",
     "chase-robber",
+    "chase-pirate",
     "build-wall",
     "improve-city",
     "play-progress",
@@ -805,17 +879,21 @@ export function expansionAction(g, p, a, rng, ctx) {
   } else if (a.type === "promote-knight") {
     promote(g, p, k);
     ctx.pay(g, p, { sheep: 1, stone: 1 });
-  } else if (["move-knight", "chase-robber"].includes(a.type)) {
+  } else if (["move-knight", "chase-robber", "chase-pirate"].includes(a.type)) {
     check(
       k?.playerId === p.id && canAct(g, k),
       "האביר צריך להיות פעיל מתור קודם ולא לפעול כבר בתור זה",
     );
-    if (a.type === "chase-robber") {
+    if (["chase-robber", "chase-pirate"].includes(a.type)) {
       check(
-        g.barbarianAttacks && vertex(k.vertexId).tiles.includes(g.robber),
+        g.barbarianAttacks &&
+          vertex(g, k.vertexId).tiles.includes(
+            a.type === "chase-pirate" ? g.pirate : g.robber,
+          ),
         "השודד אינו סמוך או שהפלישה הראשונה טרם הגיעה",
       );
       deactivate(g, k);
+      g.requiredRobberTarget = a.type === "chase-pirate" ? "pirate" : "robber";
       g.stage = "robber";
       g.returnStage = "action";
     } else {
@@ -907,10 +985,15 @@ export function expansionView(g, id) {
           vertexId: k.vertexId,
           promote: canPromote(g, player(g, id), k),
           act: canAct(g, k),
+          pirate:
+            g.seafarers &&
+            canAct(g, k) &&
+            g.barbarianAttacks > 0 &&
+            vertex(g, k.vertexId).tiles.includes(g.pirate),
           chase:
             canAct(g, k) &&
             g.barbarianAttacks > 0 &&
-            vertex(k.vertexId).tiles.includes(g.robber),
+            vertex(g, k.vertexId).tiles.includes(g.robber),
           destinations: canAct(g, k)
             ? connectedSites(g, id, k.vertexId).filter(
                 (v) =>

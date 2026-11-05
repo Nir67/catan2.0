@@ -1,6 +1,6 @@
 # CATAN for friends
 
-A Hebrew React + TypeScript client and an authoritative Socket.IO server implementing the **3–4 player base game and optional Cities & Knights expansion**. The host selects a mode when creating a room and may change it in the lobby; all participants see the same choice.
+A Hebrew React + TypeScript client and an authoritative Socket.IO server implementing the **3–4 player base game with optional Cities & Knights and Seafarers expansions**. The host selects a mode when creating a room and may change it in the lobby; all participants see the same choice.
 
 ## Run in Codespaces
 
@@ -44,6 +44,14 @@ All **54 progress cards (25 distinct effects)** replace development cards. Choic
 
 The UI shows numbered intersections, knight strength/activation, walls, metropolis crowns, merchant, event die, barbarian track, improvements and private progress cards. Choice of mode is locked once the game starts. Existing version-1 base-game saves remain compatible.
 
+## Seafarers and Friendly Robber
+
+The lobby offers two independent switches alongside the base/Cities & Knights selection. **Seafarers uses an original free-play island map**, not a reproduction of the official scenario pack: 61 hexes, the 19-hex main island, three small two-hex islands, two gold fields and surrounding sea. See the [official Seafarers rules](https://www.catan.com/sites/default/files/2021-06/catan-seafarers_2021_rule_book_201201.pdf). The project sets a 14-point target, or 17 with Cities & Knights; these custom-map targets are shown before play.
+
+Ships cost lumber and wool and have their own 15-piece supply. Coast setup permits a ship instead of a road. Ships only occupy sea/coast edges; roads only occupy land/coast edges; changing between the two networks requires your own settlement/city. An old, open endpoint ship can move once per turn. The pirate replaces robber movement on a seven or knight action, steals from adjacent ship owners, and blocks neighboring ship placement/movement. Road Building can create ships, Longest Trade Route counts both piece types with correct junctions, and first settlement on each new island grants two bonus VP. Gold production opens an owner-validated basic-resource choice against the finite bank. Combined play also supports ship relocation with Diplomat and pirate expulsion with active knights; gold production prevents an Aqueduct bonus.
+
+**Friendly Robber** is a separate optional variant: the robber cannot be placed adjacent to any player with two or fewer public VP. It applies to robber movement, including knight and Bishop effects, and does not change the pirate. Existing games retain their original options and geometry when restored.
+
 ## Reconnect and saves
 
 Each browser tab gets a random session token in `sessionStorage`. Refreshing or reconnecting **the same tab** restores its seat, color and private hand. Use separate tabs or devices for different players. Closing a tab without restoring its session loses that tab's identity; there is no account-based recovery yet. Disconnected players keep their seats and turns, so a game waits for them to return.
@@ -66,6 +74,7 @@ Unit tests cover geometry, placement, resource conservation/shortages, building 
 
 - `shared/engine.js`: pure board geometry and game rules; invalid actions leave the original state untouched.
 - `shared/engine.d.ts`: typed client-facing state.
+- `shared/seafarers.js`: per-room island geometry, ship routes, pirate, island VP and gold choices.
 - `shared/expansion.js`: Cities & Knights rules, progress decks and private decision queue.
 - `src/components/Expansion.tsx`: expansion controls, progress cards and choice prompts.
 - `server.js`: stable identities, room membership, private views, persistence and request limits.

@@ -43,7 +43,22 @@ function persist() {
     }),
     { mode: 0o600 },
   );
-  renameSync(`${dataFile}.tmp`, dataFile);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(`${dataFile}.tmp`, dataFile);
+      break;
+    } catch (error) {
+      // Windows scanners can briefly lock the destination between two saves.
+      if (!["EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt >= 5)
+        throw error;
+      Atomics.wait(
+        new Int32Array(new SharedArrayBuffer(4)),
+        0,
+        0,
+        20 * (attempt + 1),
+      );
+    }
+  }
 }
 const online = (id) =>
   [...io.sockets.sockets.values()].some((s) => s.data.playerId === id);
@@ -72,6 +87,8 @@ function emitRoom(code, room) {
     })),
     started: !!room.game,
     mode: room.mode || "base",
+    seafarers: !!room.seafarers,
+    friendlyRobber: !!room.friendlyRobber,
   };
   for (const socket of io.sockets.sockets.values())
     if (room.players.some((p) => p.id === socket.data.playerId)) {
@@ -142,29 +159,39 @@ io.on("connection", (socket) => {
     if (entry) emitRoom(...entry);
     return { playerId: socket.data.playerId };
   });
-  on("create-room", ({ playerName, mode = "base" }) => {
-    assert(
-      ![...rooms.values()].some((r) =>
-        r.players.some((p) => p.id === socket.data.playerId),
-      ),
-      "כבר הצטרפת לחדר",
-    );
-    assert(["base", "cities-knights"].includes(mode), "מצב משחק לא חוקי");
-    const name = String(playerName || "").trim();
-    assert(name.length > 0 && name.length <= 30, "כתוב שם באורך 1–30 תווים");
-    assert(rooms.size < 500, "השרת מלא כרגע");
-    let code;
-    do {
-      code = randomUUID().replaceAll("-", "").slice(0, 5).toUpperCase();
-    } while (rooms.has(code));
-    saveRoom(code, {
-      hostId: socket.data.playerId,
-      players: [{ id: socket.data.playerId, name }],
-      game: null,
-      mode,
-    });
-    return { roomCode: code };
-  });
+  on(
+    "create-room",
+    ({
+      playerName,
+      mode = "base",
+      seafarers = false,
+      friendlyRobber = false,
+    }) => {
+      assert(
+        ![...rooms.values()].some((r) =>
+          r.players.some((p) => p.id === socket.data.playerId),
+        ),
+        "כבר הצטרפת לחדר",
+      );
+      assert(["base", "cities-knights"].includes(mode), "מצב משחק לא חוקי");
+      const name = String(playerName || "").trim();
+      assert(name.length > 0 && name.length <= 30, "כתוב שם באורך 1–30 תווים");
+      assert(rooms.size < 500, "השרת מלא כרגע");
+      let code;
+      do {
+        code = randomUUID().replaceAll("-", "").slice(0, 5).toUpperCase();
+      } while (rooms.has(code));
+      saveRoom(code, {
+        hostId: socket.data.playerId,
+        players: [{ id: socket.data.playerId, name }],
+        game: null,
+        mode,
+        seafarers: !!seafarers,
+        friendlyRobber: !!friendlyRobber,
+      });
+      return { roomCode: code };
+    },
+  );
   on("join-room", ({ roomCode, playerName }) => {
     const code = codeOf(roomCode),
       room = rooms.get(code);
@@ -187,14 +214,20 @@ io.on("connection", (socket) => {
     });
     return {};
   });
-  on("set-mode", ({ mode }) => {
+  on("set-mode", ({ mode, seafarers, friendlyRobber }) => {
     const [code, room] = roomFor(socket);
     assert(
       room.hostId === socket.data.playerId && !room.game,
       "רק המארח יכול לשנות מצב לפני תחילת המשחק",
     );
     assert(["base", "cities-knights"].includes(mode), "מצב משחק לא חוקי");
-    saveRoom(code, { ...room, mode });
+    saveRoom(code, {
+      ...room,
+      mode,
+      seafarers: seafarers === undefined ? !!room.seafarers : !!seafarers,
+      friendlyRobber:
+        friendlyRobber === undefined ? !!room.friendlyRobber : !!friendlyRobber,
+    });
     return {};
   });
   on("start-game", () => {
@@ -209,6 +242,8 @@ io.on("connection", (socket) => {
       ...room,
       game: createGame(room.players, Math.random, {
         mode: room.mode || "base",
+        seafarers: !!room.seafarers,
+        friendlyRobber: !!room.friendlyRobber,
       }),
     });
     return {};
