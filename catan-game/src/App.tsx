@@ -621,6 +621,75 @@ function Board({
     </svg>
   );
 }
+function TradeNotification({
+  g,
+  id,
+  send,
+  busy,
+}: {
+  g: View;
+  id: string;
+  send: Send;
+  busy: boolean;
+}) {
+  const [dismissed, setDismissed] = useState(false),
+    offer = g.trade,
+    active = g.players[g.currentPlayerIndex].id;
+  if (
+    dismissed ||
+    !offer ||
+    offer.from === id ||
+    g.stage !== "action" ||
+    (active !== id && offer.from !== active)
+  )
+    return null;
+  const enough = canPay(g.me.resources, offer.want);
+  return (
+    <section
+      className="trade-notification"
+      role="dialog"
+      aria-labelledby="incoming-trade-title"
+      aria-describedby="incoming-trade-detail"
+    >
+      <div className="section-title">
+        <h2 id="incoming-trade-title">הצעת מסחר חדשה</h2>
+        <button
+          className="quiet"
+          aria-label="סגור הצעת מסחר"
+          onClick={() => setDismissed(true)}
+        >
+          ×
+        </button>
+      </div>
+      <p id="incoming-trade-detail">
+        <strong>{g.players.find((p) => p.id === offer.from)?.name}</strong> רוצה
+        לסחור איתך
+      </p>
+      <div className="trade-exchange">
+        <div>
+          <small>תקבל</small>
+          <strong>{handText(offer.give)}</strong>
+        </div>
+        <span aria-hidden="true">⇄</span>
+        <div>
+          <small>תיתן</small>
+          <strong>{handText(offer.want)}</strong>
+        </div>
+      </div>
+      {!enough && <p className="muted">אין לך כרגע מספיק משאבים לעסקה.</p>}
+      <div className="button-row">
+        <button
+          className="primary"
+          disabled={busy || !enough}
+          onClick={() => send({ type: "accept-trade", offerId: offer.id })}
+        >
+          קבל עסקה
+        </button>
+        <button onClick={() => setDismissed(true)}>לא מעוניין</button>
+      </div>
+    </section>
+  );
+}
 function TradePanel({
   g,
   id,
@@ -636,7 +705,7 @@ function TradePanel({
     [want, setWant] = useState(emptyHand);
   const mine = g.players[g.currentPlayerIndex].id === id;
   return (
-    <details className="panel trade-drawer">
+    <details className="panel trade-drawer" open>
       <summary>
         מסחר <small>בנק ושחקנים</small>
       </summary>
@@ -695,7 +764,9 @@ function TradePanel({
                   g.trade.from !== g.players[g.currentPlayerIndex].id) ||
                 !canPay(g.me.resources, g.trade.want)
               }
-              onClick={() => send({ type: "accept-trade" })}
+              onClick={() =>
+                send({ type: "accept-trade", offerId: g.trade?.id })
+              }
             >
               קבל עסקה
             </button>
@@ -941,6 +1012,13 @@ function Game({
   };
   return (
     <>
+      <TradeNotification
+        key={g.trade?.id ?? JSON.stringify(g.trade)}
+        g={g}
+        id={id}
+        send={send}
+        busy={busy || !connected}
+      />
       <div className="players">
         {g.players.map((p) => (
           <details

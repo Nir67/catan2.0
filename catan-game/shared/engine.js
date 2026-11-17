@@ -511,6 +511,10 @@ function perform(g, id, a, rng) {
       g.stage === "action" && g.trade && g.trade.from !== id,
       "אין הצעת מסחר זמינה",
     );
+    check(
+      a.offerId === undefined || a.offerId === g.trade.id,
+      "ההצעה השתנתה. בדוק את ההצעה החדשה",
+    );
     const offer = g.trade,
       from = g.players.find((x) => x.id === offer.from);
     check(
@@ -542,7 +546,7 @@ function perform(g, id, a, rng) {
       "אין להציע אותו משאב בשני הצדדים",
     );
     check(canPay(p.resources, giveCards), "אין לך את המשאבים המוצעים");
-    g.trade = { from: id, give: giveCards, want };
+    g.trade = { id: g.revision + 1, from: id, give: giveCards, want };
     note(g, `${p.name} הציע/ה עסקה`);
     return;
   }

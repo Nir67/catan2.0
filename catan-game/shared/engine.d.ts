@@ -127,7 +127,7 @@ export type View = {
   longestRoad: string | null;
   largestArmy: string | null;
   winner: string | null;
-  trade: { from: string; give: Hand; want: Hand } | null;
+  trade: { id?: number; from: string; give: Hand; want: Hand } | null;
   log: string[];
   revision: number;
   developmentRemaining: number;

@@ -626,3 +626,36 @@ test("seeded complete match reaches a legal winner without violating resource co
   assert.equal(g.winner, g.players[g.currentPlayerIndex].id);
   assert.ok(score(g, g.winner) >= 10);
 });
+
+test("trade acceptance can bind to a visible offer and rejects a replaced offer atomically", () => {
+  let g = ready();
+  stock(g, "a");
+  stock(g, "b");
+  g = applyAction(g, "a", {
+    type: "offer-trade",
+    give: { wood: 1 },
+    want: { brick: 1 },
+  });
+  const stale = g.trade.id;
+  g = applyAction(g, "a", {
+    type: "offer-trade",
+    give: { wood: 2 },
+    want: { brick: 2 },
+  });
+  assert.notEqual(g.trade.id, stale);
+  const before = structuredClone(g);
+  assert.throws(
+    () => applyAction(g, "b", { type: "accept-trade", offerId: stale }),
+    /ההצעה השתנתה/,
+  );
+  assert.deepEqual(g, before);
+  const accepted = applyAction(g, "b", {
+    type: "accept-trade",
+    offerId: g.trade.id,
+  });
+  assert.equal(accepted.trade, null);
+  assert.equal(
+    accepted.players[1].resources.wood,
+    g.players[1].resources.wood + 2,
+  );
+});

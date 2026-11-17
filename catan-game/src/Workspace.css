@@ -607,3 +607,90 @@
   font-size: 44px;
   color: #ae8b52;
 }
+.trade-notification {
+  position: fixed;
+  z-index: 150;
+  bottom: 24px;
+  left: 24px;
+  width: min(390px, calc(100vw - 32px));
+  padding: 20px;
+  background: #fffdf4;
+  border: 1px solid #ad945f;
+  border-radius: 10px;
+  box-shadow: 0 12px 50px #172e4155;
+  color: #354b41;
+  animation: trade-arrive 0.2s ease-out;
+}
+.trade-notification h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.trade-notification p {
+  font-size: 13px;
+}
+.trade-notification .section-title {
+  margin-bottom: 6px;
+}
+.trade-notification .quiet {
+  font-size: 20px;
+  padding: 0 7px;
+  border: 0;
+}
+.trade-exchange {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 10px;
+  margin: 12px 0;
+  background: #efefdf;
+  border-radius: 6px;
+}
+.trade-exchange > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+}
+.trade-exchange small {
+  font-size: 11px;
+  color: #75836a;
+}
+.trade-exchange strong {
+  font-size: 14px;
+}
+.trade-notification .button-row {
+  display: flex;
+  gap: 8px;
+}
+.trade-notification .button-row > button {
+  flex: 1;
+}
+.trade-notification .muted {
+  font-size: 11px;
+}
+.trade-notification .section-title > button {
+  flex: none;
+}
+@keyframes trade-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 600px) {
+  .trade-notification {
+    left: 16px;
+    bottom: 16px;
+    padding: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trade-notification {
+    animation: none;
+  }
+}
