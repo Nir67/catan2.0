@@ -38,7 +38,6 @@ const polygon = (x: number, y: number) =>
 export function WelcomeIsland() {
   return (
     <div className="welcome-table">
-      <span className="table-caption">האי משתנה. הסיפורים נשארים.</span>
       <svg className="welcome-island" viewBox="80 0 640 545" aria-hidden="true">
         <defs>
           <filter id="welcome-matte" colorInterpolationFilters="sRGB">
@@ -113,11 +112,6 @@ export function WelcomeIsland() {
           height="60"
         />
       </svg>
-      <div className="table-note">
-        <span>19 משושים</span>
-        <i />
-        <span>הרבה יותר מדרך אחת לנצח</span>
-      </div>
     </div>
   );
 }

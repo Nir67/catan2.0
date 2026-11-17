@@ -1335,7 +1335,7 @@ function App() {
     <div className="app" dir="rtl">
       <header className="topbar">
         <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
-          CATAN<span>חברים. מסחר. עוד תור אחד.</span>
+          CATAN
         </a>
         <div className="room-meta">
           <button
@@ -1389,8 +1389,7 @@ function App() {
       {!room ? (
         <main className="welcome">
           <section>
-            <span className="eyebrow">קטאן · שולחן לחברים</span>
-            <h1>נפגשים על האי.</h1>
+            <h1>קטאן</h1>
             <p>
               פותחים חדר, מזמינים חברים ומתחילים לסחור.
               <br />
@@ -1405,7 +1404,6 @@ function App() {
           </section>
           <section className="panel entry">
             <div className="entry-title">
-              <span className="eyebrow">בדיוק כמו סביב השולחן</span>
               <h2>פותחים משחק</h2>
             </div>
             <RankedChoice
