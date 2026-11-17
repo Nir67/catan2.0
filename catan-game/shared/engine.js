@@ -904,7 +904,7 @@ const expansionContext = {
     brick: "לבנים",
     sheep: "צמר",
     wheat: "חיטה",
-    stone: "מחצבים",
+    stone: "אבן",
   },
 };
 export function resolveProduction(g, ctx = expansionContext) {

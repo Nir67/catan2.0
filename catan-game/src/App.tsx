@@ -20,8 +20,11 @@ import type {
 } from "../shared/engine.js";
 import "./App.css";
 import { RankedChoice } from "./components/RankedChoice";
+import { placementFor } from "./components/Placement";
+import type { Placement, PickRequest } from "./components/Placement";
+import { BoardZoom } from "./components/BoardZoom";
 import { WelcomeIsland } from "./components/WelcomeIsland";
-import { SeafarersPanel, ExtraOptions } from "./components/Seafarers";
+import { SeafarersPanel, GoldChoice } from "./components/Seafarers";
 import {
   ExpansionPanel,
   ExpansionChoice,
@@ -52,7 +55,7 @@ const names: Record<Resource, string> = {
   brick: "לבנים",
   sheep: "צמר",
   wheat: "חיטה",
-  stone: "מחצבים",
+  stone: "אבן",
   paper: "נייר",
   cloth: "בד",
   coin: "מטבעות",
@@ -174,20 +177,28 @@ function Board({
   mode,
   send,
   disabled,
+  viewBox,
+  placement,
 }: {
   g: View;
   mode: Build | null;
   send: Send;
   disabled: boolean;
+  viewBox: string;
+  placement: Placement | null;
 }) {
   const { vertices: VERTICES, edges: EDGES, ports: PORTS } = boardFor(g);
-  const roadIds = new Set(mode === "road" ? g.legal.roads : []);
+  const roadIds = new Set(
+    placement ? placement.edges : mode === "road" ? g.legal.roads : [],
+  );
   const vertexIds = new Set(
-    mode === "city"
-      ? g.legal.cities
-      : mode === "settlement"
-        ? g.legal.settlements
-        : [],
+    placement
+      ? placement.vertices
+      : mode === "city"
+        ? g.legal.cities
+        : mode === "settlement"
+          ? g.legal.settlements
+          : [],
   );
   const keyAction = (event: React.KeyboardEvent, action: Action) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -196,12 +207,7 @@ function Board({
     }
   };
   return (
-    <svg
-      className="board"
-      viewBox={g.seafarers ? "-110 -175 1020 890" : "60 -30 680 600"}
-      role="group"
-      aria-label="לוח קטאן"
-    >
+    <svg className="board" viewBox={viewBox} role="group" aria-label="לוח קטאן">
       <defs>
         <filter id="piece-matte" colorInterpolationFilters="sRGB">
           <feColorMatrix
@@ -445,10 +451,21 @@ function Board({
               className="target"
               role="button"
               tabIndex={0}
-              aria-label={`בנה דרך ${i + 1}`}
-              onClick={() => send({ type: "build-road", edgeId: edge.id })}
+              aria-label={`${placement?.title || "בנה דרך"} ${i + 1}`}
+              onClick={() =>
+                send(
+                  placement
+                    ? { ...placement.action, [placement.field]: edge.id }
+                    : { type: "build-road", edgeId: edge.id },
+                )
+              }
               onKeyDown={(e) =>
-                keyAction(e, { type: "build-road", edgeId: edge.id })
+                keyAction(
+                  e,
+                  placement
+                    ? { ...placement.action, [placement.field]: edge.id }
+                    : { type: "build-road", edgeId: edge.id },
+                )
               }
             />
           );
@@ -466,10 +483,21 @@ function Board({
             className="target"
             role="button"
             tabIndex={0}
-            aria-label={`בנה ${mode === "city" ? "עיר" : "יישוב"} ${i + 1}`}
-            onClick={() => send({ type: `build-${mode}`, vertexId: v.id })}
+            aria-label={`${placement?.title || `בנה ${mode === "city" ? "עיר" : "יישוב"}`} ${i + 1}`}
+            onClick={() =>
+              send(
+                placement
+                  ? { ...placement.action, [placement.field]: v.id }
+                  : { type: `build-${mode}`, vertexId: v.id },
+              )
+            }
             onKeyDown={(e) =>
-              keyAction(e, { type: `build-${mode}`, vertexId: v.id })
+              keyAction(
+                e,
+                placement
+                  ? { ...placement.action, [placement.field]: v.id }
+                  : { type: `build-${mode}`, vertexId: v.id },
+              )
             }
           />
         ))}
@@ -528,6 +556,7 @@ function Board({
             return (
               <g
                 key={k.vertexId}
+                className="knight-piece"
                 aria-label={`אביר דרגה ${k.level} ${k.active ? "פעיל" : "לא פעיל"}`}
               >
                 <circle
@@ -849,7 +878,20 @@ function Game({
   busy: boolean;
   connected: boolean;
 }) {
-  const [menu, setMenu] = useState(false),
+  const [zoomControls, setZoomControls] = useState<HTMLDivElement | null>(null);
+  const [tool, setTool] = useState(""),
+    [pick, setPick] = useState<(PickRequest & { turn: number }) | null>(null);
+  const chooseOnBoard = (request: PickRequest) => {
+    setPick({ ...request, turn: g.turnNumber });
+    setBuild(null);
+  };
+  const placement =
+    pick &&
+    pick.turn === g.turnNumber &&
+    ["action", "setup-road", "road-building"].includes(g.stage)
+      ? placementFor(g, id, pick)
+      : null;
+  const [menu, setMenu] = useState(true),
     [build, setBuild] = useState<Build | null>(null);
   const active = g.players[g.currentPlayerIndex].id === id;
   const disabled = busy || !connected;
@@ -861,7 +903,10 @@ function Game({
         : null;
   const mode =
     active && !g.winner
-      ? (forced ?? (menu && g.stage === "action" ? build : null))
+      ? (forced ??
+        (!placement && tool === "build" && menu && g.stage === "action"
+          ? build
+          : null))
       : null;
   const instruction: Record<string, string> = {
     "setup-settlement":
@@ -882,6 +927,15 @@ function Game({
     "game-over": "המשחק הסתיים",
   };
   const doAction: Send = (a) => {
+    if (a.type === "select-ship-to-move") {
+      chooseOnBoard({
+        title: "בחר יעד לספינה",
+        action: { type: "move-ship", edgeId: a.edgeId },
+        field: "destination",
+      });
+      return;
+    }
+    setPick(null);
     setBuild(null);
     send(a);
   };
@@ -889,11 +943,11 @@ function Game({
     <>
       <div className="players">
         {g.players.map((p) => (
-          <article
+          <details
             key={p.id}
             className={`player-card ${p.id === g.players[g.currentPlayerIndex].id ? "current" : ""}`}
           >
-            <div>
+            <summary>
               <span className={`dot ${p.color}`} />
               <strong>
                 {p.name}
@@ -903,8 +957,8 @@ function Game({
                 className={`online ${room.players.find((x) => x.id === p.id)?.online ? "" : "offline"}`}
                 title="מצב חיבור"
               />
-            </div>
-            <b>{p.score} נקודות</b>
+              <b>{p.score} נקודות</b>
+            </summary>
             <span>
               קלפים {p.resourceCount} ·{" "}
               {g.mode === "cities-knights"
@@ -920,100 +974,82 @@ function Game({
                 {g.largestArmy === p.id ? "🛡 הצבא הגדול" : ""}
               </small>
             )}
-          </article>
+          </details>
         ))}
       </div>
       <div className="game-grid">
         <main className="island">
-          <div className="turn-banner">
-            <span className="eyebrow">
-              תור {g.turnNumber} ·{" "}
-              {g.stage.startsWith("setup") ? "הצבה ראשונית" : "משחק"} ·{" "}
-              {g.mode === "cities-knights"
-                ? `ערים ואבירים · ${g.targetScore} נקודות`
-                : `משחק בסיס · ${g.targetScore} נקודות`}
-            </span>
-            <p>
-              {g.seafarers
-                ? `יורדי הים · יעד ${g.targetScore} נקודות · מפה מקורית`
-                : ""}
-              {g.friendlyRobber ? " · שודד ידידותי" : ""}
-            </p>
-            <h1>
-              {g.winner
-                ? `${g.players.find((p) => p.id === g.winner)?.name} ניצח/ה! 🏆`
-                : active
-                  ? "התור שלך"
-                  : `התור של ${g.players[g.currentPlayerIndex].name}`}
-            </h1>
-            <p>
-              {active || g.stage === "discard"
-                ? instruction[g.stage]
-                : "צפה בלוח בזמן שהשחקן משלים את התור"}
-            </p>
+          {placement && (
+            <div className="placement-prompt" role="status">
+              {placement.title} ·{" "}
+              {placement.vertices.length + placement.edges.length} מקומות חוקיים{" "}
+              <button onClick={() => setPick(null)}>בטל בחירה</button>
+            </div>
+          )}
+          <div className="board-area">
+            <div className="board-status">
+              {" "}
+              <div className="turn-banner">
+                <span className="eyebrow">
+                  תור {g.turnNumber} ·{" "}
+                  {g.stage.startsWith("setup") ? "הצבה ראשונית" : "משחק"} ·{" "}
+                  {g.mode === "cities-knights"
+                    ? `ערים ואבירים · ${g.targetScore} נקודות`
+                    : `משחק בסיס · ${g.targetScore} נקודות`}
+                </span>
+                <p>
+                  {g.seafarers
+                    ? `יורדי הים · יעד ${g.targetScore} נקודות · מפה מקורית`
+                    : ""}
+                </p>
+                <h1>
+                  {g.winner
+                    ? `${g.players.find((p) => p.id === g.winner)?.name} ניצח/ה! 🏆`
+                    : active
+                      ? "התור שלך"
+                      : `התור של ${g.players[g.currentPlayerIndex].name}`}
+                </h1>
+                <p>
+                  {active || g.stage === "discard"
+                    ? instruction[g.stage]
+                    : "צפה בלוח בזמן שהשחקן משלים את התור"}
+                </p>
+              </div>
+              <div className="side-zoom" ref={setZoomControls} />
+            </div>{" "}
+            <BoardZoom seafarers={!!g.seafarers} controls={zoomControls}>
+              {(viewBox) => (
+                <Board
+                  g={g}
+                  mode={mode}
+                  send={doAction}
+                  disabled={disabled || !active}
+                  viewBox={viewBox}
+                  placement={placement}
+                />
+              )}
+            </BoardZoom>
           </div>
-          <Board
-            g={g}
-            mode={mode}
-            send={doAction}
-            disabled={disabled || !active}
-          />
           <div className="board-caption">
             {mode
               ? `בחר מיקום חוקי לבניית ${buildNames[mode]}`
               : "הנקודות והצלעות הזמינות מופיעות בעת בחירת בנייה"}{" "}
             · ⚓ נמלים לאורך החוף
           </div>
-        </main>
-        <aside className="sidebar">
-          {g.seafarers && (
-            <SeafarersPanel g={g} id={id} send={send} busy={disabled} />
-          )}
-          {g.mode === "cities-knights" && <ExpansionStatus g={g} />}
-          {g.mode === "cities-knights" && (
-            <ExpansionChoice g={g} id={id} send={send} busy={disabled} />
-          )}
-          {g.winner && (
-            <section className="panel winner">
-              <h2>🏆 יש לנו מנצח</h2>
-              <p>
-                {g.players.find((p) => p.id === g.winner)?.name} הגיע/ה ל־
-                {g.players.find((p) => p.id === g.winner)?.score} נקודות.
-              </p>
-              <p>
-                {room.ranked
-                  ? "המשחק המדורג הסתיים. נקודות נשמרו לחשבונות המחוברים; תוצאות האורחים מופיעות כאן."
-                  : "משחק חברים אינו משנה את הדירוג. אפשר לבחור משחק מדורג בלובי של המשחק הבא."}
-              </p>
-              {!!room.rewards?.length && (
-                <ol className="result-table">
-                  {[...room.rewards]
-                    .sort((a, b) => b.finalScore - a.finalScore)
-                    .map((p) => (
-                      <li key={p.id}>
-                        <strong>
-                          {p.name}
-                          <small>
-                            {p.registered
-                              ? "נשמר בפרופיל"
-                              : "אורח · תוצאה למשחק הזה"}
-                          </small>
-                        </strong>
-                        <span>{p.finalScore} נקודות משחק</span>
-                        <b>+{p.earned}</b>
-                      </li>
-                    ))}
-                </ol>
-              )}
-              <p>אפשר לצאת מהחדר ולהתחיל משחק חדש.</p>
-            </section>
-          )}
-          <section className="panel">
+          <section className="panel hand-dock">
             <div className="section-title">
-              <h2>המשאבים שלי</h2>
+              <button
+                className="hand-toggle"
+                aria-expanded={tool === "cards"}
+                onClick={() => setTool(tool === "cards" ? "" : "cards")}
+              >
+                הקלפים שלי {tool === "cards" ? "−" : "+"}
+              </button>
               <span className="count">{total(g.me.resources)} קלפים</span>
             </div>
-            <div className="hand">
+            <div
+              className={`hand ${tool === "cards" ? "expanded" : "compact"}`}
+            >
               {(g.mode === "cities-knights" ? MATERIALS : RESOURCES).map(
                 (r) => (
                   <div
@@ -1021,7 +1057,17 @@ function Game({
                     className="hand-card"
                     aria-label={`${names[r]} – ${g.me.resources[r]} קלפים`}
                   >
-                    <PlayingCard kind={r} count={g.me.resources[r]} />
+                    {tool === "cards" ? (
+                      <PlayingCard kind={r} count={g.me.resources[r]} />
+                    ) : (
+                      <button
+                        className="resource-total"
+                        onClick={() => setTool("cards")}
+                      >
+                        <span>{names[r]}</span>
+                        <b>{g.me.resources[r]}</b>
+                      </button>
+                    )}
                   </div>
                 ),
               )}
@@ -1030,8 +1076,10 @@ function Game({
               רק אתה רואה את חלוקת החומרים ואת הקלפים שבידך.
             </p>
           </section>
+        </main>
+        <aside className="sidebar">
           {!g.winner && (
-            <section className="panel">
+            <section className="panel turn-controls">
               <div className="dice">
                 <span>{g.dice?.[0] ?? "?"}</span>
                 <span>{g.dice?.[1] ?? "?"}</span>
@@ -1069,140 +1117,301 @@ function Game({
               )}
             </section>
           )}
-          {!g.winner && (
-            <section className="panel">
+
+          <nav className="tool-tabs" role="tablist" aria-label="כלי המשחק">
+            {[
+              ["build", "בנייה"],
+              ["trade", "מסחר"],
+              ...(g.mode === "cities-knights" ? [["cities", "ערים"]] : []),
+              ["cards", "קלפים"],
+              ["info", "מידע"],
+            ].map(([key, label]) => (
               <button
-                className="build-toggle"
-                aria-expanded={menu}
+                role="tab"
+                aria-selected={tool === key}
+                key={key}
                 onClick={() => {
-                  setMenu(!menu);
+                  setTool(tool === key ? "" : key);
+                  setMenu(true);
+                  setPick(null);
                   setBuild(null);
                 }}
               >
-                בנייה {menu ? "−" : "+"}
+                {label}
               </button>
-              {menu && (
-                <div className="build-options">
-                  {(["road", "settlement", "city"] as Build[]).map((type) => {
-                    const count =
-                      type === "road"
-                        ? g.legal.roads.length
-                        : type === "settlement"
-                          ? g.legal.settlements.length
-                          : g.legal.cities.length;
-                    return (
-                      <button
-                        key={type}
-                        className={mode === type ? "selected" : ""}
-                        disabled={
-                          disabled || !active || g.stage !== "action" || !count
-                        }
-                        onClick={() => setBuild(build === type ? null : type)}
-                      >
-                        <img
-                          src={
-                            pieces[type][
-                              g.players.find((p) => p.id === id)!.color
-                            ]
+            ))}
+          </nav>
+          <div className="tool-scroll" data-tool={tool}>
+            {g.seafarers && (
+              <div className="tool-build">
+                <SeafarersPanel
+                  g={g}
+                  id={id}
+                  send={send}
+                  busy={disabled}
+                  onPick={chooseOnBoard}
+                />
+              </div>
+            )}
+            {g.goldChoice && (
+              <GoldChoice g={g} id={id} send={send} busy={disabled} />
+            )}
+            {g.mode === "cities-knights" && (
+              <div className="tool-info">
+                <ExpansionStatus g={g} />
+              </div>
+            )}
+            {g.mode === "cities-knights" && (
+              <ExpansionChoice g={g} id={id} send={send} busy={disabled} />
+            )}
+            {g.winner && (
+              <section className="panel winner">
+                <h2>🏆 יש לנו מנצח</h2>
+                <p>
+                  {g.players.find((p) => p.id === g.winner)?.name} הגיע/ה ל־
+                  {g.players.find((p) => p.id === g.winner)?.score} נקודות.
+                </p>
+                <p>
+                  {room.ranked
+                    ? "המשחק המדורג הסתיים. נקודות נשמרו לחשבונות המחוברים; תוצאות האורחים מופיעות כאן."
+                    : "משחק חברים אינו משנה את הדירוג. אפשר לבחור משחק מדורג בלובי של המשחק הבא."}
+                </p>
+                {!!room.rewards?.length && (
+                  <ol className="result-table">
+                    {[...room.rewards]
+                      .sort((a, b) => b.finalScore - a.finalScore)
+                      .map((p) => (
+                        <li key={p.id}>
+                          <strong>
+                            {p.name}
+                            <small>
+                              {p.registered
+                                ? "נשמר בפרופיל"
+                                : "אורח · תוצאה למשחק הזה"}
+                            </small>
+                          </strong>
+                          <span>{p.finalScore} נקודות משחק</span>
+                          <b>+{p.earned}</b>
+                        </li>
+                      ))}
+                  </ol>
+                )}
+                <p>אפשר לצאת מהחדר ולהתחיל משחק חדש.</p>
+              </section>
+            )}
+            {!g.winner && (
+              <section className="panel tool-build">
+                <h2>בנייה</h2>
+                {menu && (
+                  <div className="build-options">
+                    {(["road", "settlement", "city"] as Build[]).map((type) => {
+                      const count =
+                        type === "road"
+                          ? g.legal.roads.length
+                          : type === "settlement"
+                            ? g.legal.settlements.length
+                            : g.legal.cities.length;
+                      return (
+                        <button
+                          key={type}
+                          className={mode === type ? "selected" : ""}
+                          disabled={
+                            disabled ||
+                            !active ||
+                            g.stage !== "action" ||
+                            !count
                           }
-                          alt=""
-                        />
+                          onClick={() => {
+                            setPick(null);
+                            setBuild(build === type ? null : type);
+                          }}
+                        >
+                          <img
+                            src={
+                              pieces[type][
+                                g.players.find((p) => p.id === id)!.color
+                              ]
+                            }
+                            alt=""
+                          />
+                          <span>
+                            <strong>{buildNames[type]}</strong>
+                            <small>{handText(COSTS[type])}</small>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {g.mode !== "cities-knights" && (
+                      <button
+                        disabled={
+                          disabled ||
+                          !active ||
+                          g.stage !== "action" ||
+                          !g.developmentRemaining ||
+                          !canPay(g.me.resources, COSTS.development)
+                        }
+                        onClick={() => send({ type: "buy-development" })}
+                      >
+                        <span>🃏</span>
                         <span>
-                          <strong>{buildNames[type]}</strong>
-                          <small>{handText(COSTS[type])}</small>
+                          <strong>קנה קלף פיתוח</strong>
+                          <small>
+                            {handText(COSTS.development)} · נותרו{" "}
+                            {g.developmentRemaining}
+                          </small>
                         </span>
                       </button>
-                    );
-                  })}
-                  {g.mode !== "cities-knights" && (
-                    <button
-                      disabled={
-                        disabled ||
-                        !active ||
-                        g.stage !== "action" ||
-                        !g.developmentRemaining ||
-                        !canPay(g.me.resources, COSTS.development)
-                      }
-                      onClick={() => send({ type: "buy-development" })}
-                    >
-                      <span>🃏</span>
-                      <span>
-                        <strong>קנה קלף פיתוח</strong>
-                        <small>
-                          {handText(COSTS.development)} · נותרו{" "}
-                          {g.developmentRemaining}
-                        </small>
-                      </span>
-                    </button>
-                  )}
-                  <p className="muted">
-                    15 דרכים, 5 יישובים ו־4 ערים לכל שחקן. רק מיקומים חוקיים
-                    מוצגים בלוח.
-                  </p>
-                </div>
-              )}
-            </section>
-          )}
-          {!!g.pendingDiscards[id] && (
-            <DiscardPanel
-              key={`discard-${g.turnNumber}`}
-              g={g}
-              send={send}
-              busy={disabled}
-              required={g.pendingDiscards[id]}
-            />
-          )}
-          {g.stage === "steal" && active && (
-            <section className="panel urgent">
-              <h2>בחר שחקן לגניבה</h2>
-              {g.victims.map((v) => (
-                <button
-                  key={v}
-                  disabled={disabled}
-                  onClick={() => send({ type: "steal", victimId: v })}
-                >
-                  {g.players.find((p) => p.id === v)?.name}
-                </button>
-              ))}
-            </section>
-          )}
-          {g.mode === "cities-knights" && (
-            <ExpansionPanel g={g} id={id} send={send} busy={disabled} />
-          )}
-          {g.stage === "action" && (
-            <TradePanel
-              key={`trade-${g.turnNumber}`}
-              g={g}
-              id={id}
-              send={send}
-              busy={disabled}
-            />
-          )}
-          {!g.winner && g.mode !== "cities-knights" && (
-            <DevelopmentPanel
-              key={`development-${g.turnNumber}`}
-              g={g}
-              active={active}
-              send={send}
-              busy={disabled}
-            />
-          )}
-          <details className="panel">
-            <summary>הבנק</summary>
-            <p>{handText(g.bank)}</p>
-            <p>קלפי פיתוח שנותרו: {g.developmentRemaining}</p>
-          </details>
-          <details className="panel" open>
-            <summary>יומן המשחק</summary>
-            <ol className="game-log">
-              {g.log
-                .slice(-8)
-                .reverse()
-                .map((entry, i) => (
-                  <li key={`${g.revision}-${i}`}>{entry}</li>
+                    )}
+                    {g.mode === "cities-knights" && (
+                      <>
+                        <button
+                          aria-label="גייס אביר · צמר + אבן"
+                          disabled={
+                            disabled ||
+                            !active ||
+                            g.stage !== "action" ||
+                            !g.expansionLegal?.hire.length ||
+                            !canPay(g.me.resources, { sheep: 1, stone: 1 })
+                          }
+                          onClick={() =>
+                            chooseOnBoard({
+                              title: "בחר מיקום לאביר",
+                              action: { type: "hire-knight" },
+                              field: "vertexId",
+                            })
+                          }
+                        >
+                          <span
+                            className="build-symbol knight-symbol"
+                            aria-hidden="true"
+                          >
+                            ♞
+                          </span>
+                          <span>
+                            <strong>אביר</strong>
+                            <small>1 צמר + 1 אבן</small>
+                          </span>
+                        </button>
+                        <button
+                          aria-label="בנה חומה · שתי לבנים"
+                          disabled={
+                            disabled ||
+                            !active ||
+                            g.stage !== "action" ||
+                            !g.buildings.some(
+                              (b) =>
+                                b.playerId === id &&
+                                b.type === "city" &&
+                                !b.wall,
+                            ) ||
+                            g.buildings.filter(
+                              (b) => b.playerId === id && b.wall,
+                            ).length >= 3 ||
+                            !canPay(g.me.resources, { brick: 2 })
+                          }
+                          onClick={() =>
+                            chooseOnBoard({
+                              title: "בחר עיר לחומה",
+                              action: { type: "build-wall" },
+                              field: "vertexId",
+                            })
+                          }
+                        >
+                          <span
+                            className="build-symbol wall-symbol"
+                            aria-hidden="true"
+                          >
+                            ▥
+                          </span>
+                          <span>
+                            <strong>חומה</strong>
+                            <small>2 לבנים</small>
+                          </span>
+                        </button>
+                      </>
+                    )}
+                    <p className="muted">
+                      15 דרכים, 5 יישובים ו־4 ערים לכל שחקן. רק מיקומים חוקיים
+                      מוצגים בלוח.
+                    </p>
+                  </div>
+                )}
+              </section>
+            )}
+            {!!g.pendingDiscards[id] && (
+              <DiscardPanel
+                key={`discard-${g.turnNumber}`}
+                g={g}
+                send={send}
+                busy={disabled}
+                required={g.pendingDiscards[id]}
+              />
+            )}
+            {g.stage === "steal" && active && (
+              <section className="panel urgent">
+                <h2>בחר שחקן לגניבה</h2>
+                {g.victims.map((v) => (
+                  <button
+                    key={v}
+                    disabled={disabled}
+                    onClick={() => send({ type: "steal", victimId: v })}
+                  >
+                    {g.players.find((p) => p.id === v)?.name}
+                  </button>
                 ))}
-            </ol>
-          </details>
+              </section>
+            )}
+            {g.mode === "cities-knights" && (
+              <ExpansionPanel
+                g={g}
+                id={id}
+                send={doAction}
+                busy={disabled}
+                onPick={chooseOnBoard}
+                section={
+                  tool === "cities"
+                    ? "cities"
+                    : tool === "cards"
+                      ? "cards"
+                      : "knights"
+                }
+              />
+            )}
+            {g.stage === "action" && tool === "trade" && (
+              <TradePanel
+                key={`trade-${g.turnNumber}`}
+                g={g}
+                id={id}
+                send={send}
+                busy={disabled}
+              />
+            )}
+            {!g.winner && g.mode !== "cities-knights" && tool === "cards" && (
+              <DevelopmentPanel
+                key={`development-${g.turnNumber}`}
+                g={g}
+                active={active}
+                send={send}
+                busy={disabled}
+              />
+            )}
+            <details className="panel tool-info">
+              <summary>הבנק</summary>
+              <p>{handText(g.bank)}</p>
+              <p>קלפי פיתוח שנותרו: {g.developmentRemaining}</p>
+            </details>
+            <details className="panel tool-info" open>
+              <summary>יומן המשחק</summary>
+              <ol className="game-log">
+                {g.log
+                  .slice(-8)
+                  .reverse()
+                  .map((entry, i) => (
+                    <li key={`${g.revision}-${i}`}>{entry}</li>
+                  ))}
+              </ol>
+            </details>
+          </div>
         </aside>
       </div>
     </>
@@ -1212,14 +1421,18 @@ function ModePicker({
   mode,
   onChange,
   disabled,
+  seafarers,
+  onSeafarers,
 }: {
   mode: Room["mode"];
   onChange: (m: Room["mode"]) => void;
   disabled: boolean;
+  seafarers: boolean;
+  onSeafarers: (value: boolean) => void;
 }) {
   return (
     <fieldset className="mode-picker">
-      <legend>איך משחקים?</legend>
+      <legend>משחק והרחבות</legend>
       <button
         type="button"
         className={mode === "base" ? "selected" : ""}
@@ -1240,17 +1453,31 @@ function ModePicker({
         <strong>ערים ואבירים</strong>
         <small>13 נקודות · ברברים, אבירים ופיתוח ערים</small>
       </button>
+      <label className={`sea-option ${seafarers ? "selected" : ""}`}>
+        <input
+          type="checkbox"
+          checked={seafarers}
+          disabled={disabled}
+          onChange={(e) => onSeafarers(e.target.checked)}
+        />
+        <span>
+          <strong>יורדי הים</strong>
+          <small>ספינות, פיראט, זהב ואיים חדשים · משתלב עם שני המצבים</small>
+        </span>
+      </label>
     </fieldset>
   );
 }
 function App() {
+  const [lastRoom, setLastRoom] = useState(
+    () => localStorage.getItem("catan-last-room") || "",
+  );
   const [showCards, setShowCards] = useState(false);
   const [account, setAccount] = useState<Profile | null>(null);
   const [mode, setMode] = useState<Room["mode"]>("base");
   const [ranked, setRanked] = useState(false);
   const [extras, setExtras] = useState({
     seafarers: false,
-    friendlyRobber: false,
   });
   const [connected, setConnected] = useState(socket.connected),
     [id, setId] = useState(""),
@@ -1280,6 +1507,8 @@ function App() {
       setId(value);
     }
     function roomState(value: Room) {
+      localStorage.setItem("catan-last-room", value.roomCode);
+      setLastRoom(value.roomCode);
       setRoom(value);
     }
     function gameState(value: View) {
@@ -1332,7 +1561,7 @@ function App() {
       });
   }
   return (
-    <div className="app" dir="rtl">
+    <div className={`app ${g ? "is-playing" : ""}`} dir="rtl">
       <header className="topbar">
         <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
           CATAN
@@ -1357,13 +1586,13 @@ function App() {
           >
             {connected ? "● מחובר" : "● מתחבר מחדש"}
           </span>
-          {room && (!room.started || g?.winner) && (
+          {room && (
             <button
               className="quiet"
               disabled={busy}
               onClick={() => request("leave-room", {})}
             >
-              יציאה מהחדר
+              {room.started && !g?.winner ? "יציאה מהמשחק" : "יציאה מהחדר"}
             </button>
           )}
         </div>
@@ -1388,6 +1617,22 @@ function App() {
       )}
       {!room ? (
         <main className="welcome">
+          {lastRoom && (
+            <div className="return-game">
+              <button
+                disabled={busy || !connected}
+                onClick={() =>
+                  request("join-room", { roomCode: lastRoom, playerName: name })
+                }
+              >
+                חזור למשחק {lastRoom}
+              </button>
+              <small>
+                אפשר לחזור עם אותו משתמש או דפדפן. יציאה וניתוק לא מורידים
+                נקודות.
+              </small>
+            </div>
+          )}
           <section>
             <h1>קטאן</h1>
             <p>
@@ -1411,21 +1656,13 @@ function App() {
               onChange={setRanked}
               disabled={busy}
             />
-            <ModePicker mode={mode} onChange={setMode} disabled={busy} />
-            <details className="expansion-drawer">
-              <summary>
-                להוסיף הרחבות?{" "}
-                <small>
-                  {[
-                    extras.seafarers ? "יורדי הים" : "",
-                    extras.friendlyRobber ? "שודד ידידותי" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || "בלי תוספות"}
-                </small>
-              </summary>
-              <ExtraOptions value={extras} change={setExtras} disabled={busy} />
-            </details>
+            <ModePicker
+              mode={mode}
+              onChange={setMode}
+              disabled={busy}
+              seafarers={extras.seafarers}
+              onSeafarers={(seafarers) => setExtras({ seafarers })}
+            />
             <label>
               שם השחקן
               <input
@@ -1487,20 +1724,14 @@ function App() {
               ? "משחק מדורג · 100 נקודות לניצחון ו־20 לסיום"
               : "משחק חברים · ללא שינוי בדירוג האישי"}
           </p>
-          <ExtraOptions
-            value={{
-              seafarers: !!room.seafarers,
-              friendlyRobber: !!room.friendlyRobber,
-            }}
-            disabled={busy || room.hostId !== id}
-            change={(extras) =>
-              request("set-mode", { mode: room.mode, ...extras })
-            }
-          />
           <ModePicker
             mode={room.mode}
             disabled={busy || room.hostId !== id}
             onChange={(mode) => request("set-mode", { mode })}
+            seafarers={!!room.seafarers}
+            onSeafarers={(seafarers) =>
+              request("set-mode", { mode: room.mode, seafarers })
+            }
           />
           <strong className="room-code" dir="ltr">
             {room.roomCode}
@@ -1562,14 +1793,13 @@ function App() {
             ההתקדמות נשמרת בשרת; חזרה באותה לשונית משחזרת את המקום.
           </p>
           <div className="expansion-help">
-            <strong>יורדי הים והשודד הידידותי</strong>
+            <strong>יורדי הים</strong>
             <p>
               יורדי הים מוסיפה מפה מקורית עם שלושה איים קטנים: ספינה עולה עץ
               וצמר, ספינת קצה מתור קודם ניתנת להזזה פעם בתור, ושדות זהב מפיקים
               משאבים לבחירה. יישוב ראשון שלך בכל אי חדש מעניק שתי נקודות בונוס.
               ב־7 אפשר להזיז פיראט במקום שודד; הוא חוסם בנייה והזזת ספינות
-              סמוכות. יעד: 14 נקודות, או 17 בשילוב ערים ואבירים. השודד הידידותי
-              הוא וריאנט נפרד שמגן על שחקנים עם שתי נקודות ומטה.
+              סמוכות. יעד: 14 נקודות, או 17 בשילוב ערים ואבירים.
             </p>
           </div>
           <div className="expansion-help">

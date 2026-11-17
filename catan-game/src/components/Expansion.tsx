@@ -1,3 +1,4 @@
+import type { PickRequest } from "./Placement";
 import { useState } from "react";
 import type { View, Resource, Track, Hand } from "../../shared/engine.js";
 import {
@@ -13,13 +14,19 @@ import { CardArt } from "./Cards";
 import "./Expansion.css";
 
 type Action = { type: string; [key: string]: unknown };
-type Props = { g: View; id: string; send: (a: Action) => void; busy: boolean };
+type Props = {
+  g: View;
+  id: string;
+  send: (a: Action) => void;
+  busy: boolean;
+  onPick?: (pick: PickRequest) => void;
+};
 const materialNames: Record<Resource, string> = {
   wood: "עץ",
   brick: "לבנים",
   sheep: "צמר",
   wheat: "חיטה",
-  stone: "מחצבים",
+  stone: "אבן",
   paper: "נייר",
   cloth: "בד",
   coin: "מטבעות",
@@ -126,7 +133,14 @@ export function ExpansionChoice(props: Props) {
     </section>
   );
 }
-function ProgressCard({ card, g, id, send, busy }: Props & { card: string }) {
+function ProgressCard({
+  card,
+  g,
+  id,
+  send,
+  busy,
+  onPick,
+}: Props & { card: string }) {
   const [open, setOpen] = useState(false),
     [one, setOne] = useState(""),
     [two, setTwo] = useState("");
@@ -251,7 +265,19 @@ function ProgressCard({ card, g, id, send, busy }: Props & { card: string }) {
       <button
         disabled={!playable}
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (onPick && ["engineer", "medicine"].includes(card)) {
+            onPick({
+              title:
+                card === "engineer"
+                  ? "בחר עיר לחומה בחינם"
+                  : "בחר יישוב לשדרוג",
+              action: { type: "play-progress", card },
+              field: "vertexId",
+            });
+            setOpen(false);
+          } else setOpen(!open);
+        }}
       >
         {open ? "סגור" : "שחק קלף"}
       </button>
@@ -375,12 +401,11 @@ export function ExpansionStatus({ g }: { g: View }) {
     </section>
   );
 }
-export function ExpansionPanel(props: Props) {
-  const { g, id, send, busy } = props;
-  const [dest, setDest] = useState(""),
-    [hire, setHire] = useState(""),
-    [city, setCity] = useState(""),
-    [harborPlayer, setHarborPlayer] = useState(""),
+export function ExpansionPanel(
+  props: Props & { section?: "knights" | "cities" | "cards" },
+) {
+  const { g, id, send, busy, onPick, section = "knights" } = props;
+  const [harborPlayer, setHarborPlayer] = useState(""),
     [harborResource, setHarborResource] = useState("");
   const active = g.players[g.currentPlayerIndex].id === id;
   const disabled = busy || !active || g.stage !== "action" || !!g.winner;
@@ -388,42 +413,20 @@ export function ExpansionPanel(props: Props) {
     (b) => b.playerId === id && b.type === "city",
   );
   const ownKnights = g.knightPieces!.filter((k) => k.playerId === id);
+  if (section === "knights" && !ownKnights.length) return null;
   return (
-    <>
-      <section className="panel">
-        <h2>אבירים וחומות</h2>
-        <p className="muted">
-          המספרים על הלוח מציינים צמתים. אביר שהופעל בתור זה יכול להגן, ויוכל
-          לפעול מתורך הבא.
-        </p>
-        <Select
-          label="מיקום לאביר חדש"
-          value={hire}
-          change={setHire}
-          options={g.expansionLegal!.hire.map((v) => ({
-            id: v,
-            label: siteName(g, v),
-          }))}
-        />
-        <button
-          disabled={
-            disabled || !hire || !canPay(g.me.resources, { sheep: 1, stone: 1 })
-          }
-          onClick={() => {
-            send({ type: "hire-knight", vertexId: hire });
-            setHire("");
-          }}
-        >
-          גייס אביר · צמר + מחצבים
-        </button>
-        {ownKnights.map((k) => {
+    <div className="expansion-tools" data-section={section}>
+      <section className="panel knight-tools">
+        <h2>האבירים שלי</h2>
+        <p className="muted">אביר שהופעל בתור זה יוכל לפעול מתורך הבא.</p>
+        {ownKnights.map((k, index) => {
           const legal = g.expansionLegal!.knights.find(
             (x) => x.vertexId === k.vertexId,
           )!;
           return (
             <div className="knight-control" key={k.vertexId}>
               <strong>
-                {siteName(g, k.vertexId)} · דרגה {k.level} ·{" "}
+                אביר {index + 1} · דרגה {k.level} ·{" "}
                 {k.active ? "פעיל" : "לא פעיל"}
               </strong>
               <div className="button-row">
@@ -449,7 +452,7 @@ export function ExpansionPanel(props: Props) {
                     send({ type: "promote-knight", vertexId: k.vertexId })
                   }
                 >
-                  קדם · צמר + מחצבים
+                  קדם · צמר + אבן
                 </button>
                 <button
                   disabled={disabled || !legal.chase}
@@ -471,69 +474,24 @@ export function ExpansionPanel(props: Props) {
                 )}
               </div>
               {legal.destinations.length > 0 && (
-                <>
-                  <Select
-                    label={`יעד לאביר ב${siteName(g, k.vertexId)}`}
-                    value={dest}
-                    change={setDest}
-                    options={legal.destinations.map((v) => ({
-                      id: v,
-                      label:
-                        siteName(g, v) +
-                        (g.knightPieces!.some((x) => x.vertexId === v)
-                          ? " · דחיקת יריב"
-                          : ""),
-                    }))}
-                  />
-                  <button
-                    disabled={disabled || !legal.destinations.includes(dest)}
-                    onClick={() => {
-                      send({
-                        type: "move-knight",
-                        vertexId: k.vertexId,
-                        destination: dest,
-                      });
-                      setDest("");
-                    }}
-                  >
-                    העבר אביר
-                  </button>
-                </>
+                <button
+                  disabled={disabled}
+                  onClick={() =>
+                    onPick?.({
+                      title: "בחר יעד לאביר",
+                      action: { type: "move-knight", vertexId: k.vertexId },
+                      field: "destination",
+                    })
+                  }
+                >
+                  העבר אביר על הלוח
+                </button>
               )}
             </div>
           );
         })}
-        <Select
-          label="עיר לשיפור או לחומה"
-          value={city}
-          change={setCity}
-          options={ownCities.map((b) => ({
-            id: b.vertexId,
-            label:
-              siteName(g, b.vertexId) +
-              (b.metropolis ? ` · מטרופולין ${trackNames[b.metropolis]}` : "") +
-              (b.wall ? " · חומה" : ""),
-          }))}
-        />
-        <button
-          disabled={
-            disabled ||
-            !city ||
-            !!ownCities.find((b) => b.vertexId === city)?.wall ||
-            ownCities.filter((b) => b.wall).length >= 3 ||
-            !canPay(g.me.resources, { brick: 2 })
-          }
-          onClick={() => send({ type: "build-wall", vertexId: city })}
-        >
-          בנה חומה · שתי לבנים
-        </button>
-        <p className="muted">
-          חומותיך מאפשרות להחזיק{" "}
-          {7 + 2 * ownCities.filter((b) => b.wall).length} קלפים לפני השלכת חצי
-          היד ב־7.
-        </p>
       </section>
-      <section className="panel">
+      <section className="panel city-tools">
         <h2>שיפורי ערים</h2>
         {(Object.keys(TRACKS) as Track[]).map((t) => {
           const level = g.me.improvements![t];
@@ -563,9 +521,24 @@ export function ExpansionPanel(props: Props) {
                     [TRACKS[t]]: Math.max(0, level + 1 - (g.crane ? 1 : 0)),
                   })
                 }
-                onClick={() =>
-                  send({ type: "improve-city", track: t, vertexId: city })
-                }
+                onClick={() => {
+                  if (
+                    level >= 3 &&
+                    !g.buildings.some(
+                      (b) => b.playerId === id && b.metropolis === t,
+                    ) &&
+                    !g.players.some(
+                      (p) =>
+                        p.id !== id && (p.improvements?.[t] ?? 0) >= level + 1,
+                    )
+                  )
+                    onPick?.({
+                      title: "בחר עיר למטרופולין",
+                      action: { type: "improve-city", track: t },
+                      field: "vertexId",
+                    });
+                  else send({ type: "improve-city", track: t });
+                }}
               >
                 שפר · {Math.max(0, level + 1 - (g.crane ? 1 : 0))}{" "}
                 {materialNames[TRACKS[t]]}
@@ -574,11 +547,11 @@ export function ExpansionPanel(props: Props) {
           );
         })}
         <p className="muted">
-          מטרופולין בדרגה 4 מעניק שתי נקודות נוספות ומוגן מברברים. בחר עיר פנויה
-          לפני השיפור שמעניק אותו.
+          מטרופולין מעניק שתי נקודות נוספות ומוגן מברברים. כשהשיפור דורש עיר,
+          בוחרים אותה על הלוח.
         </p>
       </section>
-      <section className="panel">
+      <section className="panel progress-tools">
         <h2>
           קלפי ההתקדמות שלי{" "}
           <span className="count">{g.me.progress!.length}</span>
@@ -627,6 +600,6 @@ export function ExpansionPanel(props: Props) {
           </div>
         )}
       </section>
-    </>
+    </div>
   );
 }

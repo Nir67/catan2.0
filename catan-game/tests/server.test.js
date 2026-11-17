@@ -195,7 +195,7 @@ for (const mode of ["base", "cities-knights"])
           }
           assert.equal(a.game.mode, mode);
           assert.equal(!!a.game.seafarers, seafarers);
-          assert.equal(!!a.game.friendlyRobber, seafarers);
+          assert.equal(!!a.game.friendlyRobber, false);
           assert.equal(a.game.tiles.length, seafarers ? 61 : 19);
           assert.equal(
             a.game.buildings.filter((b) => b.type === "city").length,
@@ -253,6 +253,47 @@ for (const mode of ["base", "cities-knights"])
             seafarers,
             "chosen ranked mode survives restart with guests",
           );
+          const observer = await connect(b.token);
+          const accountsBefore = JSON.parse(
+            await readFile(dataFile, "utf8"),
+          ).accounts;
+          assert.equal((await request(restored, "leave-room")).success, true);
+          await waitFor(
+            () => observer.room?.players.find((p) => p.id === id)?.left,
+          );
+          assert.equal(
+            observer.room.players.find((p) => p.id === id).online,
+            false,
+          );
+          assert.equal(
+            (await request(restored, "game-action", { type: "end-turn" }))
+              .success,
+            false,
+          );
+          const detached = await connect(a.token);
+          await request(detached, "resume");
+          assert.equal(
+            detached.game,
+            null,
+            "intentional exit does not automatically reopen game",
+          );
+          assert.deepEqual(
+            JSON.parse(await readFile(dataFile, "utf8")).accounts,
+            accountsBefore,
+            "exit never deducts ranked points or awards completion points",
+          );
+          assert.equal(
+            (await request(detached, "join-room", { roomCode: code })).success,
+            true,
+          );
+          await waitFor(() => detached.game);
+          assert.equal(
+            detached.game.revision,
+            snapshot.revision,
+            "return restores original seat and board",
+          );
+          assert.equal(detached.id, id);
+          assert.equal(detached.room.players.length, 3);
         } finally {
           clients.forEach((c) => c.socket.disconnect());
           if (server?.exitCode === null) {

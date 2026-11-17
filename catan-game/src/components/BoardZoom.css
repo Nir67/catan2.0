@@ -1,0 +1,106 @@
+.board-zoom {
+  min-width: 0;
+}
+.board-zoom-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 5px 14px 10px;
+  flex-wrap: wrap;
+}
+.zoom-buttons {
+  display: flex;
+  align-items: center;
+  border: 1px solid #7a8c7a;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #20383e;
+}
+.board-zoom-toolbar .zoom-buttons button {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #f0e7cc;
+  width: 35px;
+  height: 34px;
+  padding: 0;
+  box-shadow: none;
+  font-size: 23px;
+  font-weight: 500;
+}
+.board-zoom-toolbar .zoom-buttons button:hover:not(:disabled) {
+  background: #526757;
+}
+.zoom-buttons output {
+  min-width: 56px;
+  text-align: center;
+  color: #e8e1c9;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.board-zoom-toolbar .zoom-reset {
+  padding: 8px 11px;
+  border: 1px solid #7a8c7a;
+  background: none;
+  color: #dedfc7;
+  font-size: 11px;
+  box-shadow: none;
+}
+.board-zoom-toolbar small {
+  font-size: 10px;
+  color: #a7b8a5;
+}
+.board-viewport {
+  position: relative;
+  width: 100%;
+  height: clamp(320px, 65vh, 720px);
+  overflow: hidden;
+  touch-action: pan-x pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  border-radius: 3px;
+  outline-offset: -3px;
+}
+.board-viewport .board {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  overflow: hidden;
+}
+.board-viewport.zoomed {
+  cursor: grab;
+  touch-action: none;
+}
+.board-viewport.dragging,
+.board-viewport.dragging .target {
+  cursor: grabbing;
+}
+.board-viewport:focus-visible {
+  outline: 2px solid #d4b978;
+}
+.board-viewport image {
+  pointer-events: none;
+}
+@media (max-width: 720px) {
+  .board-viewport {
+    height: clamp(340px, 65vh, 600px);
+  }
+  .board-zoom-toolbar {
+    gap: 8px;
+    padding: 5px 8px 9px;
+  }
+  .board-zoom-toolbar small {
+    flex-basis: 100%;
+    text-align: center;
+    font-size: 9px;
+  }
+  .board-zoom-toolbar .zoom-buttons button {
+    height: 38px;
+    width: 40px;
+  }
+  .board-zoom-toolbar .zoom-reset {
+    min-height: 38px;
+  }
+}

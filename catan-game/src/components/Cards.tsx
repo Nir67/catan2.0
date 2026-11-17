@@ -107,9 +107,9 @@ const cards: Record<
   stone: {
     column: 4,
     row: 0,
-    title: "מחצבים",
+    title: "אבן",
     subtitle: "קלף משאב",
-    description: "מחצבים מההרים משמשים לשדרוג ערים ולרכישת קלפי פיתוח.",
+    description: "אבן מההרים משמשת לשדרוג ערים ולרכישת קלפי פיתוח.",
     tone: "#536675",
   },
   knight: {

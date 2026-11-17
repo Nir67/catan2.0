@@ -81,7 +81,7 @@ const assert = (condition, message) => {
 };
 function roomFor(socket) {
   const entry = [...rooms].find(([, r]) =>
-    r.players.some((p) => p.id === socket.data.playerId),
+    r.players.some((p) => p.id === socket.data.playerId && !p.left),
   );
   assert(entry, "אינך שייך לחדר");
   return entry;
@@ -93,7 +93,7 @@ function emitRoom(code, room) {
     players: room.players.map((p, i) => ({
       ...p,
       color: COLORS[i],
-      online: online(p.id),
+      online: !p.left && online(p.id),
     })),
     started: !!room.game,
     ranked: !!room.ranked,
@@ -105,7 +105,7 @@ function emitRoom(code, room) {
   for (const socket of io.sockets.sockets.values())
     if (
       validSocket(socket) &&
-      room.players.some((p) => p.id === socket.data.playerId)
+      room.players.some((p) => p.id === socket.data.playerId && !p.left)
     ) {
       socket.emit("room-state", lobby);
       if (room.game)
@@ -144,7 +144,7 @@ function resetSocket(socket) {
   socket.emit("identity", socket.data.playerId);
   socket.emit("account-state", null);
   const room = [...rooms].find(([, r]) =>
-    r.players.some((p) => p.id === socket.data.playerId),
+    r.players.some((p) => p.id === socket.data.playerId && !p.left),
   );
   if (room) emitRoom(...room);
 }
@@ -169,7 +169,7 @@ function accountTransaction(fn) {
 }
 function authAllowed(socket) {
   const entry = [...rooms].find(([, r]) =>
-    r.players.some((p) => p.id === socket.data.playerId),
+    r.players.some((p) => p.id === socket.data.playerId && !p.left),
   );
   assert(!entry?.[1].game, "כדי להחליף חשבון יש לצאת מהחדר לאחר סיום המשחק");
   return entry;
@@ -196,7 +196,7 @@ async function authenticate(socket, data, register) {
         ? accounts.register(credentials, data.displayName)
         : accounts.user(credentials.id);
       const existing = [...rooms].find(([, r]) =>
-        r.players.some((p) => p.id === user.id),
+        r.players.some((p) => p.id === user.id && !p.left),
       );
       assert(
         !current || !existing || originalId === user.id,
@@ -289,7 +289,7 @@ io.on("connection", (socket) => {
   socket.emit("identity", socket.data.playerId);
   socket.emit("account-state", accounts.profile(socket.data.accountId));
   const current = [...rooms].find(([, r]) =>
-    r.players.some((p) => p.id === socket.data.playerId),
+    r.players.some((p) => p.id === socket.data.playerId && !p.left),
   );
   if (current) emitRoom(...current);
   on("get-leaderboard", () => ({ leaders: accounts.leaderboard() }));
@@ -304,7 +304,7 @@ io.on("connection", (socket) => {
   });
   on("resume", () => {
     const entry = [...rooms].find(([, r]) =>
-      r.players.some((p) => p.id === socket.data.playerId),
+      r.players.some((p) => p.id === socket.data.playerId && !p.left),
     );
     if (entry) emitRoom(...entry);
     socket.emit("account-state", accounts.profile(socket.data.accountId));
@@ -312,16 +312,10 @@ io.on("connection", (socket) => {
   });
   on(
     "create-room",
-    ({
-      playerName,
-      mode = "base",
-      seafarers = false,
-      friendlyRobber = false,
-      ranked = false,
-    }) => {
+    ({ playerName, mode = "base", seafarers = false, ranked = false }) => {
       assert(
         ![...rooms.values()].some((r) =>
-          r.players.some((p) => p.id === socket.data.playerId),
+          r.players.some((p) => p.id === socket.data.playerId && !p.left),
         ),
         "כבר הצטרפת לחדר",
       );
@@ -345,7 +339,7 @@ io.on("connection", (socket) => {
         ranked,
         mode,
         seafarers: !!seafarers,
-        friendlyRobber: !!friendlyRobber,
+        friendlyRobber: false,
       });
       return { roomCode: code };
     },
@@ -355,11 +349,23 @@ io.on("connection", (socket) => {
       room = rooms.get(code);
     assert(room, "החדר לא נמצא");
     const entry = [...rooms].find(([, r]) =>
-      r.players.some((p) => p.id === socket.data.playerId),
+      r.players.some((p) => p.id === socket.data.playerId && !p.left),
     );
     if (entry) {
       assert(entry[0] === code, "כבר הצטרפת לחדר אחר");
       emitRoom(code, room);
+      return {};
+    }
+    const returning = room.players.find(
+      (p) => p.id === socket.data.playerId && p.left,
+    );
+    if (returning) {
+      saveRoom(code, {
+        ...room,
+        players: room.players.map((p) =>
+          p.id === returning.id ? { ...p, left: false } : p,
+        ),
+      });
       return {};
     }
     assert(!room.game, "המשחק כבר התחיל");
@@ -377,7 +383,7 @@ io.on("connection", (socket) => {
     });
     return {};
   });
-  on("set-mode", ({ mode, seafarers, friendlyRobber, ranked }) => {
+  on("set-mode", ({ mode, seafarers, ranked }) => {
     const [code, room] = roomFor(socket);
     assert(
       room.hostId === socket.data.playerId && !room.game,
@@ -393,8 +399,7 @@ io.on("connection", (socket) => {
       mode,
       ranked: ranked === undefined ? !!room.ranked : ranked,
       seafarers: seafarers === undefined ? !!room.seafarers : !!seafarers,
-      friendlyRobber:
-        friendlyRobber === undefined ? !!room.friendlyRobber : !!friendlyRobber,
+      friendlyRobber: false,
     });
     return {};
   });
@@ -413,7 +418,7 @@ io.on("connection", (socket) => {
       game: createGame(room.players, Math.random, {
         mode: room.mode || "base",
         seafarers: !!room.seafarers,
-        friendlyRobber: !!room.friendlyRobber,
+        friendlyRobber: false,
       }),
     });
     return {};
@@ -429,10 +434,17 @@ io.on("connection", (socket) => {
   });
   on("leave-room", () => {
     const [code, room] = roomFor(socket);
-    assert(
-      !room.game || room.game.winner,
-      "במשחק פעיל המקום שלך נשמר; אפשר לחזור ברענון עם אותו דפדפן",
-    );
+    if (room.game && !room.game.winner) {
+      saveRoom(code, {
+        ...room,
+        players: room.players.map((p) =>
+          p.id === socket.data.playerId ? { ...p, left: true } : p,
+        ),
+      });
+      for (const peer of io.sockets.sockets.values())
+        if (peer.data.playerId === socket.data.playerId) peer.emit("room-left");
+      return {};
+    }
     const players = room.players.filter((p) => p.id !== socket.data.playerId);
     if (players.length)
       saveRoom(code, {
@@ -451,7 +463,7 @@ io.on("connection", (socket) => {
   });
   socket.on("disconnect", () => {
     const entry = [...rooms].find(([, r]) =>
-      r.players.some((p) => p.id === socket.data.playerId),
+      r.players.some((p) => p.id === socket.data.playerId && !p.left),
     );
     if (entry) emitRoom(...entry);
   });
