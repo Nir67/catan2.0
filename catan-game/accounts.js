@@ -105,10 +105,7 @@ export class Accounts {
         /^[\p{L}\p{N}_-]{3,24}$/u.test(key),
         "שם משתמש: 3–24 אותיות, ספרות, מקף או קו תחתון",
       );
-      check(
-        password.length >= 6,
-        "בחר סיסמה של לפחות 6 תווים",
-      );
+      check(password.length >= 6, "בחר סיסמה של לפחות 6 תווים");
       check(!this.state.users.some((u) => u.key === key), "שם המשתמש כבר תפוס");
     }
     const existing = this.state.users.find((u) => u.key === key),
@@ -203,18 +200,26 @@ export class Accounts {
       this.state.awardedMatches.includes(room.matchId)
     )
       return false;
-    const ids = room.players.map((p) => p.accountId);
+    const ids = room.players.map((p) => p.id);
     if (
       ids.length < 3 ||
       ids.length > 4 ||
       new Set(ids).size !== ids.length ||
       !room.players.every(
-        (p) => p.id === p.accountId && this.user(p.accountId),
+        (p) => !p.accountId || (p.id === p.accountId && this.user(p.accountId)),
       ) ||
       !room.players.some((p) => p.id === room.game.winner)
     )
       return false;
+    room.rewards = room.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      registered: !!p.accountId,
+      earned: p.id === room.game.winner ? 100 : 20,
+      finalScore: finalScore(room.game, p.id),
+    }));
     for (const p of room.players) {
+      if (!p.accountId) continue;
       const u = this.user(p.accountId),
         won = p.id === room.game.winner,
         earned = won ? 100 : 20;

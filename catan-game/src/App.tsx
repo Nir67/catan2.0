@@ -19,6 +19,8 @@ import type {
   DevelopmentType,
 } from "../shared/engine.js";
 import "./App.css";
+import { RankedChoice } from "./components/RankedChoice";
+import { WelcomeIsland } from "./components/WelcomeIsland";
 import { SeafarersPanel, ExtraOptions } from "./components/Seafarers";
 import {
   ExpansionPanel,
@@ -92,6 +94,13 @@ type Room = {
   hostId: string;
   started: boolean;
   ranked?: boolean;
+  rewards?: {
+    id: string;
+    name: string;
+    registered: boolean;
+    earned: number;
+    finalScore: number;
+  }[];
   players: {
     id: string;
     name: string;
@@ -598,8 +607,10 @@ function TradePanel({
     [want, setWant] = useState(emptyHand);
   const mine = g.players[g.currentPlayerIndex].id === id;
   return (
-    <section className="panel">
-      <h2>מסחר</h2>
+    <details className="panel trade-drawer">
+      <summary>
+        מסחר <small>בנק ושחקנים</small>
+      </summary>
       {
         <>
           <p className="muted">
@@ -673,7 +684,7 @@ function TradePanel({
           <p className="muted">אפשר לסחור עם השחקן שבתורו כשמופיעה הצעה.</p>
         )
       )}
-    </section>
+    </details>
   );
 }
 function DevelopmentPanel({
@@ -696,10 +707,13 @@ function DevelopmentPanel({
     !g.playedDevelopment &&
     ["pre-roll", "action"].includes(g.stage);
   return (
-    <section className="panel">
-      <h2>
+    <details
+      className="panel development-drawer"
+      open={g.me.development.length > 0}
+    >
+      <summary>
         קלפי הפיתוח שלי <span className="count">{g.me.development.length}</span>
-      </h2>
+      </summary>
       <div className="dev-cards">
         {(Object.keys(cardNames) as DevelopmentType[]).map((type) => {
           const hand = g.me.development.filter((c) => c.type === type);
@@ -786,7 +800,7 @@ function DevelopmentPanel({
         קלף פעולה אחד בתור, החל מהתור שאחרי הקנייה. נקודות ניצחון נספרות
         אוטומטית.
       </p>
-    </section>
+    </details>
   );
 }
 function DiscardPanel({
@@ -968,9 +982,29 @@ function Game({
               </p>
               <p>
                 {room.ranked
-                  ? "נקודות המסע והתוצאה נוספו לפרופילים. למנצח 100 נקודות וליתר השחקנים 20 נקודות."
-                  : "משחק חברים אינו מוסיף ניקוד לדירוג. כדי לצבור נקודות, התחברו כולם לפני המשחק הבא."}
+                  ? "המשחק המדורג הסתיים. נקודות נשמרו לחשבונות המחוברים; תוצאות האורחים מופיעות כאן."
+                  : "משחק חברים אינו משנה את הדירוג. אפשר לבחור משחק מדורג בלובי של המשחק הבא."}
               </p>
+              {!!room.rewards?.length && (
+                <ol className="result-table">
+                  {[...room.rewards]
+                    .sort((a, b) => b.finalScore - a.finalScore)
+                    .map((p) => (
+                      <li key={p.id}>
+                        <strong>
+                          {p.name}
+                          <small>
+                            {p.registered
+                              ? "נשמר בפרופיל"
+                              : "אורח · תוצאה למשחק הזה"}
+                          </small>
+                        </strong>
+                        <span>{p.finalScore} נקודות משחק</span>
+                        <b>+{p.earned}</b>
+                      </li>
+                    ))}
+                </ol>
+              )}
               <p>אפשר לצאת מהחדר ולהתחיל משחק חדש.</p>
             </section>
           )}
@@ -1014,7 +1048,7 @@ function Game({
                     disabled={disabled}
                     onClick={() => send({ type: "roll-dice" })}
                   >
-                    🎲 גלגל קוביות
+                    גלגל קוביות
                   </button>
                 )}
                 {active && g.stage === "action" && (
@@ -1045,7 +1079,7 @@ function Game({
                   setBuild(null);
                 }}
               >
-                🔨 בנייה {menu ? "−" : "+"}
+                בנייה {menu ? "−" : "+"}
               </button>
               {menu && (
                 <div className="build-options">
@@ -1213,6 +1247,7 @@ function App() {
   const [showCards, setShowCards] = useState(false);
   const [account, setAccount] = useState<Profile | null>(null);
   const [mode, setMode] = useState<Room["mode"]>("base");
+  const [ranked, setRanked] = useState(false);
   const [extras, setExtras] = useState({
     seafarers: false,
     friendlyRobber: false,
@@ -1300,7 +1335,7 @@ function App() {
     <div className="app" dir="rtl">
       <header className="topbar">
         <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
-          CATAN<span>האי מחכה לכם</span>
+          CATAN<span>חברים. מסחר. עוד תור אחד.</span>
         </a>
         <div className="room-meta">
           <button
@@ -1312,6 +1347,9 @@ function App() {
           {room && (
             <span>
               חדר <b dir="ltr">{room.roomCode}</b>
+              <small className="match-kind">
+                {room.ranked ? "מדורג" : "חברים"}
+              </small>
             </span>
           )}
           <span
@@ -1351,29 +1389,45 @@ function App() {
       {!room ? (
         <main className="welcome">
           <section>
-            <span className="eyebrow">קטאן והרחבות · 3–4 שחקנים</span>
-            <h1>
-              בונים אי.
-              <br />
-              יוצרים אימפריה.
-            </h1>
+            <span className="eyebrow">קטאן · שולחן לחברים</span>
+            <h1>נפגשים על האי.</h1>
             <p>
-              סחרו במשאבים, סללו דרכים והקימו יישובים.
+              פותחים חדר, מזמינים חברים ומתחילים לסחור.
               <br />
-              {mode === "cities-knights"
-                ? "אבירים מגינים על האי. מטרופולינים מובילים ל־13 נקודות."
-                : "הראשון שמגיע ל־10 נקודות בתורו מנצח."}
+              {`הראשון שמגיע ל־${extras.seafarers ? (mode === "cities-knights" ? 17 : 14) : mode === "cities-knights" ? 13 : 10} נקודות בתורו מנצח.`}
             </p>
             <div className="feature-list">
-              <span>🌾 משאבים ומסחר</span>
-              <span>🛤 דרכים וערים</span>
-              <span>🃏 קלפי פיתוח</span>
+              <span>3–4 שחקנים</span>
+              <span>משחק הבסיס והרחבות</span>
+              <span>חברים או מדורג — אתם בוחרים</span>
             </div>
+            <WelcomeIsland />
           </section>
           <section className="panel entry">
-            <h2>יוצאים לדרך</h2>
+            <div className="entry-title">
+              <span className="eyebrow">בדיוק כמו סביב השולחן</span>
+              <h2>פותחים משחק</h2>
+            </div>
+            <RankedChoice
+              ranked={ranked}
+              onChange={setRanked}
+              disabled={busy}
+            />
             <ModePicker mode={mode} onChange={setMode} disabled={busy} />
-            <ExtraOptions value={extras} change={setExtras} disabled={busy} />
+            <details className="expansion-drawer">
+              <summary>
+                להוסיף הרחבות?{" "}
+                <small>
+                  {[
+                    extras.seafarers ? "יורדי הים" : "",
+                    extras.friendlyRobber ? "שודד ידידותי" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "בלי תוספות"}
+                </small>
+              </summary>
+              <ExtraOptions value={extras} change={setExtras} disabled={busy} />
+            </details>
             <label>
               שם השחקן
               <input
@@ -1387,7 +1441,12 @@ function App() {
               className="primary"
               disabled={!connected || busy || !name.trim()}
               onClick={() =>
-                request("create-room", { playerName: name, mode, ...extras })
+                request("create-room", {
+                  playerName: name,
+                  mode,
+                  ranked,
+                  ...extras,
+                })
               }
             >
               צור משחק
@@ -1418,10 +1477,17 @@ function App() {
           <span className="eyebrow">מכינים את האי</span>
           <h1>החדר שלכם מוכן</h1>
           <p>שתפו את הקוד עם החברים</p>
+          <RankedChoice
+            ranked={!!room.ranked}
+            disabled={busy || room.hostId !== id}
+            onChange={(ranked) =>
+              request("set-mode", { mode: room.mode, ranked })
+            }
+          />
           <p className="ranking-notice">
             {room.ranked
               ? "משחק מדורג · 100 נקודות לניצחון ו־20 לסיום"
-              : "משחק חברים · התחברו כולם לחשבונות לפני ההתחלה כדי לצבור נקודות לדירוג"}
+              : "משחק חברים · ללא שינוי בדירוג האישי"}
           </p>
           <ExtraOptions
             value={{

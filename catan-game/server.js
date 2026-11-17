@@ -96,9 +96,8 @@ function emitRoom(code, room) {
       online: online(p.id),
     })),
     started: !!room.game,
-    ranked: room.game
-      ? !!room.ranked
-      : room.players.every((p) => !!p.accountId),
+    ranked: !!room.ranked,
+    rewards: room.rewards || [],
     mode: room.mode || "base",
     seafarers: !!room.seafarers,
     friendlyRobber: !!room.friendlyRobber,
@@ -318,6 +317,7 @@ io.on("connection", (socket) => {
       mode = "base",
       seafarers = false,
       friendlyRobber = false,
+      ranked = false,
     }) => {
       assert(
         ![...rooms.values()].some((r) =>
@@ -326,6 +326,7 @@ io.on("connection", (socket) => {
         "כבר הצטרפת לחדר",
       );
       assert(["base", "cities-knights"].includes(mode), "מצב משחק לא חוקי");
+      assert(typeof ranked === "boolean", "בחר משחק מדורג או משחק חברים");
       const name =
         accounts.user(socket.data.accountId)?.displayName ||
         String(playerName || "").trim();
@@ -341,6 +342,7 @@ io.on("connection", (socket) => {
           { id: socket.data.playerId, name, accountId: socket.data.accountId },
         ],
         game: null,
+        ranked,
         mode,
         seafarers: !!seafarers,
         friendlyRobber: !!friendlyRobber,
@@ -375,16 +377,21 @@ io.on("connection", (socket) => {
     });
     return {};
   });
-  on("set-mode", ({ mode, seafarers, friendlyRobber }) => {
+  on("set-mode", ({ mode, seafarers, friendlyRobber, ranked }) => {
     const [code, room] = roomFor(socket);
     assert(
       room.hostId === socket.data.playerId && !room.game,
       "רק המארח יכול לשנות מצב לפני תחילת המשחק",
     );
     assert(["base", "cities-knights"].includes(mode), "מצב משחק לא חוקי");
+    assert(
+      ranked === undefined || typeof ranked === "boolean",
+      "בחר משחק מדורג או משחק חברים",
+    );
     saveRoom(code, {
       ...room,
       mode,
+      ranked: ranked === undefined ? !!room.ranked : ranked,
       seafarers: seafarers === undefined ? !!room.seafarers : !!seafarers,
       friendlyRobber:
         friendlyRobber === undefined ? !!room.friendlyRobber : !!friendlyRobber,
@@ -402,10 +409,7 @@ io.on("connection", (socket) => {
     saveRoom(code, {
       ...room,
       matchId: randomUUID(),
-      ranked:
-        room.players.every((p) => !!p.accountId) &&
-        new Set(room.players.map((p) => p.accountId)).size ===
-          room.players.length,
+      ranked: !!room.ranked,
       game: createGame(room.players, Math.random, {
         mode: room.mode || "base",
         seafarers: !!room.seafarers,

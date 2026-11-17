@@ -85,7 +85,7 @@ test("login rate limits persist across socket reconnect attempts by address", ()
   store.inFlight = 2;
   assert.throws(() => store.limit("third-ip"));
 });
-test("win/completion awards are exactly once, survive restart and never trust guest or duplicate seats", () => {
+test("win/completion awards are exactly once, survive restart and allow guests but reject duplicate seats", () => {
   const store = new Accounts(),
     match = room(store);
   assert.equal(
@@ -123,9 +123,11 @@ test("win/completion awards are exactly once, survive restart and never trust gu
   guest.players[2].accountId = null;
   assert.equal(
     restored.award(guest, () => 10),
-    false,
+    true,
   );
-  assert.equal(restored.profile(match.players[0].id).points, 100);
+  assert.equal(restored.profile(match.players[0].id).points, 200);
+  assert.equal(guest.rewards[2].registered, false);
+  assert.equal(guest.rewards[2].earned, 20);
 });
 test("levels, achievement milestones, streak reset, leaderboard ordering and bounded history", () => {
   const store = new Accounts();
@@ -149,4 +151,57 @@ test("levels, achievement milestones, streak reset, leaderboard ordering and bou
   store.award(loss, () => 10);
   assert.equal(store.profile(p.id).streak, 0);
   assert.equal(store.profile(p.id).bestStreak, 32);
+});
+
+test("ranked guest-only matches get one result ledger without creating fake accounts", () => {
+  const store = new Accounts(),
+    match = {
+      matchId: "guest-only",
+      ranked: true,
+      players: ["one", "two", "three"].map((id) => ({
+        id,
+        name: id,
+        accountId: null,
+      })),
+      game: { winner: "one", mode: "base" },
+    };
+  assert.equal(
+    store.award(match, (_game, id) => (id === "one" ? 10 : 5)),
+    true,
+  );
+  assert.deepEqual(
+    match.rewards.map((p) => p.earned),
+    [100, 20, 20],
+  );
+  assert.ok(match.rewards.every((p) => !p.registered));
+  assert.equal(store.state.users.length, 0);
+  assert.equal(
+    store.award({ ...match, rewardsGranted: false }, () => 10),
+    false,
+  );
+  assert.deepEqual(store.leaderboard(), []);
+});
+test("a guest can win a ranked mixed match; signed-in finishers still receive their twenty points", () => {
+  const store = new Accounts(),
+    match = room(store, "mixed-guest-winner"),
+    registered = match.players[1].id,
+    other = match.players[2].id;
+  match.players[0] = { id: "guest-winner", accountId: null, name: "Guest" };
+  match.game.winner = "guest-winner";
+  assert.equal(
+    store.award(match, () => 10),
+    true,
+  );
+  assert.equal(store.profile(registered).points, 20);
+  assert.equal(store.profile(other).points, 20);
+  assert.equal(store.profile(registered).played, 1);
+  assert.equal(store.profile(registered).wins, 0);
+  assert.equal(match.rewards[0].earned, 100);
+  assert.equal(match.rewards[0].registered, false);
+  const forged = room(store, "forged");
+  forged.players[0].accountId = "missing-account";
+  assert.equal(
+    store.award(forged, () => 10),
+    false,
+  );
 });

@@ -135,6 +135,22 @@ for (const mode of ["base", "cities-knights"])
           await waitFor(() => b.room.mode !== mode);
           assert.equal((await request(a, "set-mode", { mode })).success, true);
           await waitFor(() => b.room.mode === mode);
+          assert.equal(a.room.ranked, false, "casual is the explicit default");
+          assert.equal(
+            (await request(b, "set-mode", { mode, ranked: true })).success,
+            false,
+          );
+          assert.equal(
+            (await request(a, "set-mode", { mode, ranked: "yes" })).success,
+            false,
+          );
+          assert.equal(
+            (await request(a, "set-mode", { mode, ranked: seafarers })).success,
+            true,
+          );
+          await waitFor(() =>
+            clients.slice(0, 3).every((c) => c.room.ranked === seafarers),
+          );
           assert.equal((await request(a, "start-game")).success, true);
           await waitFor(() => clients.slice(0, 3).every((c) => c.game));
           assert.equal(
@@ -232,6 +248,11 @@ for (const mode of ["base", "cities-knights"])
           assert.equal(restored.id, id);
           assert.deepEqual(restored.game.dice, snapshot.dice);
           assert.equal(restored.game.revision, snapshot.revision);
+          assert.equal(
+            restored.room.ranked,
+            seafarers,
+            "chosen ranked mode survives restart with guests",
+          );
         } finally {
           clients.forEach((c) => c.socket.disconnect());
           if (server?.exitCode === null) {
