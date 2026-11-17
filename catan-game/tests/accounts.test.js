@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Accounts } from "../accounts.js";
-const password = "islands and knights forever";
+const password = "abcdef";
 const user = (store, name) =>
   store.register(
     { key: name, username: name, salt: "test", passwordHash: "0".repeat(128) },

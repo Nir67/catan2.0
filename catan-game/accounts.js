@@ -106,8 +106,8 @@ export class Accounts {
         "שם משתמש: 3–24 אותיות, ספרות, מקף או קו תחתון",
       );
       check(
-        password.length >= 15,
-        "בחר סיסמה באורך 15–128 תווים. אפשר להשתמש במשפט",
+        password.length >= 6,
+        "בחר סיסמה של לפחות 6 תווים",
       );
       check(!this.state.users.some((u) => u.key === key), "שם המשתמש כבר תפוס");
     }

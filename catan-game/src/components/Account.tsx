@@ -399,7 +399,7 @@ export function AccountCenter({
                       autoComplete={
                         tab === "register" ? "new-password" : "current-password"
                       }
-                      minLength={tab === "register" ? 15 : 1}
+                      minLength={tab === "register" ? 6 : 1}
                       maxLength={128}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -408,7 +408,7 @@ export function AccountCenter({
                   </label>
                   {tab === "register" && (
                     <>
-                      <small>15–128 תווים. אפשר לבחור משפט שקל לזכור.</small>
+                      <small>לפחות 6 תווים. אין חובה לאות גדולה, מספר או סימן מיוחד.</small>
                       <label>
                         אימות סיסמה
                         <input
