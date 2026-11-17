@@ -5,4 +5,15 @@ if (!token) {
   token = crypto.randomUUID();
   sessionStorage.setItem(tokenKey, token);
 }
-export const socket = io({ auth: { token }, autoConnect: true });
+export function saveAccountToken(value: string | null) {
+  if (value) sessionStorage.setItem("catan-account-session", value);
+  else sessionStorage.removeItem("catan-account-session");
+}
+export const socket = io({
+  auth: (done) =>
+    done({
+      token,
+      accountToken: sessionStorage.getItem("catan-account-session"),
+    }),
+  autoConnect: true,
+});

@@ -52,11 +52,21 @@ Ships cost lumber and wool and have their own 15-piece supply. Coast setup permi
 
 **Friendly Robber** is a separate optional variant: the robber cannot be placed adjacent to any player with two or fewer public VP. It applies to robber movement, including knight and Bishop effects, and does not change the pirate. Existing games retain their original options and geometry when restored.
 
+## Accounts, rankings and progression
+
+Players can register with a unique username, display name and password, or keep playing as guests. Registration inside an unstarted guest lobby upgrades that seat and host identity. A signed-in account uses one stable player ID across tabs and devices; the same account cannot occupy multiple seats. Sign in on another device to recover an active account seat. Existing guest tokens never become account credentials.
+
+A match is ranked only when **all 3–4 seats belong to distinct authenticated accounts when the host starts it**. Ranked winners receive **100 journey points**, other finishers **20**. Level increases every 200 points. Profiles include ranked wins/games, win rate, current/best streak, five achievements, and the last 30 results (ten displayed). The top 25 leaderboard uses journey points, then wins. Game victory points and journey points are separate.
+
+Only a winning transition accepted by the authoritative rules engine can award points. Accounts, match ledger and room state are written atomically in the same save. Match UUIDs and reward flags prevent duplicate credit on replay, refresh, rejoin, room departure or server restart. Existing saves/previously-started guest matches receive no retroactive awards. Guest or mixed matches remain playable and unranked.
+
+Passwords require 15–128 characters and are stored with asynchronous scrypt (N=131072, r=8, p=1), independent random salts and timing-safe comparison. Passwords are never returned or logged. Account sessions use server-generated 256-bit tokens; only SHA-256 token digests are persisted. Tokens stay in tab sessionStorage, expire after 30 days, rotate on sign-in and are revoked at logout. Reconnects use the current token. Authentication is limited per connection address and expensive password jobs are capped. Production deployment must use HTTPS and protect the private persistent save directory; this is a single-server local-account implementation, without email recovery or OAuth.
+
 ## Reconnect and saves
 
-Each browser tab gets a random session token in `sessionStorage`. Refreshing or reconnecting **the same tab** restores its seat, color and private hand. Use separate tabs or devices for different players. Closing a tab without restoring its session loses that tab's identity; there is no account-based recovery yet. Disconnected players keep their seats and turns, so a game waits for them to return.
+Guest play: each browser tab gets a random session token in `sessionStorage`. Refreshing or reconnecting **the same tab** restores its seat, color and private hand. Use separate tabs or devices for different players. Closing a guest tab without restoring its session loses that guest identity. Registered users can sign in again to recover their account and active seat. Disconnected players keep their seats and turns, so a game waits for them to return.
 
-The server saves accepted state changes atomically to `.data/rooms.json` and loads them after a restart. Keep that directory on persistent storage; ephemeral hosting loses the saved games. It includes private hands and identity tokens: it is gitignored and must never be served publicly or committed. Current saved-game schema is version 1. Corrupt/unsupported save files stop startup rather than being overwritten. Older in-memory rooms from previous versions cannot be migrated.
+The server saves accepted state changes atomically to `.data/rooms.json` and loads them after a restart. Keep that directory on persistent storage; ephemeral hosting loses the saved games. It includes private hands, guest identities, password hashes, account statistics and session digests: it is gitignored and must never be served publicly or committed. Current saved-game schema is version 1. Corrupt/unsupported save files stop startup rather than being overwritten. Older in-memory rooms from previous versions cannot be migrated.
 
 The host can remove themselves from a lobby using Exit; a new host is selected from remaining players. A running game cannot be reset by sending Start again. Finished-game participants can leave and create new rooms.
 
@@ -77,6 +87,8 @@ Unit tests cover geometry, placement, resource conservation/shortages, building 
 - `shared/seafarers.js`: per-room island geometry, ship routes, pirate, island VP and gold choices.
 - `shared/expansion.js`: Cities & Knights rules, progress decks and private decision queue.
 - `src/components/Expansion.tsx`: expansion controls, progress cards and choice prompts.
+- `accounts.js`: local authentication, safe profile views, session validation, reward ledger and leaderboard.
+- `src/components/Account.tsx`: registration/login, progression, achievements, match history and rankings.
 - `server.js`: stable identities, room membership, private views, persistence and request limits.
 - `src/App.tsx`, `src/App.css`: responsive Hebrew interface, legal placement targets, hand/trade/development controls and game log.
 - `src/socket.ts`: reconnecting same-origin client.

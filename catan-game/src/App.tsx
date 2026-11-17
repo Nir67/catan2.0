@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { socket } from "./socket";
+import { socket, saveAccountToken } from "./socket";
+import { AccountCenter } from "./components/Account";
+import type { Profile } from "./components/Account";
 import {
   COSTS,
   RESOURCES,
@@ -89,7 +91,14 @@ type Room = {
   roomCode: string;
   hostId: string;
   started: boolean;
-  players: { id: string; name: string; color: Color; online: boolean }[];
+  ranked?: boolean;
+  players: {
+    id: string;
+    name: string;
+    color: Color;
+    online: boolean;
+    accountId?: string | null;
+  }[];
 };
 type Action = { type: string; [key: string]: unknown };
 type Reply = { success: boolean; message?: string; playerId?: string };
@@ -957,6 +966,11 @@ function Game({
                 {g.players.find((p) => p.id === g.winner)?.name} הגיע/ה ל־
                 {g.players.find((p) => p.id === g.winner)?.score} נקודות.
               </p>
+              <p>
+                {room.ranked
+                  ? "נקודות המסע והתוצאה נוספו לפרופילים. למנצח 100 נקודות וליתר השחקנים 20 נקודות."
+                  : "משחק חברים אינו מוסיף ניקוד לדירוג. כדי לצבור נקודות, התחברו כולם לפני המשחק הבא."}
+              </p>
               <p>אפשר לצאת מהחדר ולהתחיל משחק חדש.</p>
             </section>
           )}
@@ -1197,6 +1211,7 @@ function ModePicker({
 }
 function App() {
   const [showCards, setShowCards] = useState(false);
+  const [account, setAccount] = useState<Profile | null>(null);
   const [mode, setMode] = useState<Room["mode"]>("base");
   const [extras, setExtras] = useState({
     seafarers: false,
@@ -1239,6 +1254,12 @@ function App() {
       setRoom(null);
       setGame(null);
     }
+    function accountState(value: Profile | null) {
+      setAccount(value);
+      if (value) setName(value.displayName);
+      else saveAccountToken(null);
+    }
+    socket.on("account-state", accountState);
     socket.on("connect", connect);
     socket.on("disconnect", disconnect);
     socket.on("connect_error", failure);
@@ -1248,6 +1269,7 @@ function App() {
     socket.on("room-left", left);
     if (socket.connected) connect();
     return () => {
+      socket.off("account-state", accountState);
       socket.off("connect", connect);
       socket.off("disconnect", disconnect);
       socket.off("connect_error", failure);
@@ -1308,6 +1330,11 @@ function App() {
           )}
         </div>
       </header>
+      <AccountCenter
+        profile={account}
+        connected={connected}
+        inGame={!!room?.started && !g?.winner}
+      />
       {!connected && room && (
         <div className="notice" role="status">
           החיבור נותק. המשחק נשמר והמקום שלך נשמר; מנסים להתחבר מחדש.
@@ -1391,6 +1418,11 @@ function App() {
           <span className="eyebrow">מכינים את האי</span>
           <h1>החדר שלכם מוכן</h1>
           <p>שתפו את הקוד עם החברים</p>
+          <p className="ranking-notice">
+            {room.ranked
+              ? "משחק מדורג · 100 נקודות לניצחון ו־20 לסיום"
+              : "משחק חברים · התחברו כולם לחשבונות לפני ההתחלה כדי לצבור נקודות לדירוג"}
+          </p>
           <ExtraOptions
             value={{
               seafarers: !!room.seafarers,
@@ -1416,6 +1448,7 @@ function App() {
                 {p.name}
                 {p.id === id ? " (אתה)" : ""}
                 {p.id === room.hostId ? " · מארח" : ""}
+                {p.accountId ? " · חשבון מחובר" : " · אורח"}
                 <span className="muted">{p.online ? "מחובר" : "לא מחובר"}</span>
               </li>
             ))}

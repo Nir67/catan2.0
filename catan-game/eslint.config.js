@@ -7,7 +7,13 @@ import { defineConfig, globalIgnores } from "eslint/config";
 export default defineConfig([
   globalIgnores(["dist", ".data"]),
   {
-    files: ["server.js", "shared/**/*.js", "scripts/**/*.js", "tests/**/*.js"],
+    files: [
+      "server.js",
+      "accounts.js",
+      "shared/**/*.js",
+      "scripts/**/*.js",
+      "tests/**/*.js",
+    ],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
   },

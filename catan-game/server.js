@@ -1,3 +1,4 @@
+import { Accounts, newAccountState } from "./accounts.js";
 import express from "express";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
@@ -5,7 +6,13 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
-import { createGame, applyAction, viewFor, COLORS } from "./shared/engine.js";
+import {
+  createGame,
+  applyAction,
+  viewFor,
+  COLORS,
+  score,
+} from "./shared/engine.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -16,6 +23,7 @@ const io = new Server(httpServer, {
 const dataFile =
   process.env.CATAN_DATA_FILE ||
   resolve(dirname(fileURLToPath(import.meta.url)), ".data/rooms.json");
+const accounts = new Accounts();
 let rooms = new Map(),
   identities = new Map();
 try {
@@ -23,6 +31,7 @@ try {
   if (data.version !== 1) throw new Error("Unsupported save version");
   rooms = new Map(data.rooms);
   identities = new Map(data.identities);
+  accounts.state = data.accounts || newAccountState();
 } catch (error) {
   if (error.code !== "ENOENT") {
     console.error(
@@ -40,6 +49,7 @@ function persist() {
       version: 1,
       rooms: [...rooms],
       identities: [...identities],
+      accounts: accounts.state,
     }),
     { mode: 0o600 },
   );
@@ -86,29 +96,150 @@ function emitRoom(code, room) {
       online: online(p.id),
     })),
     started: !!room.game,
+    ranked: room.game
+      ? !!room.ranked
+      : room.players.every((p) => !!p.accountId),
     mode: room.mode || "base",
     seafarers: !!room.seafarers,
     friendlyRobber: !!room.friendlyRobber,
   };
   for (const socket of io.sockets.sockets.values())
-    if (room.players.some((p) => p.id === socket.data.playerId)) {
+    if (
+      validSocket(socket) &&
+      room.players.some((p) => p.id === socket.data.playerId)
+    ) {
       socket.emit("room-state", lobby);
       if (room.game)
         socket.emit("game-state", viewFor(room.game, socket.data.playerId));
     }
 }
 function saveRoom(code, next) {
-  const old = rooms.get(code);
+  const old = rooms.get(code),
+    oldAccounts = structuredClone(accounts.state);
+  let awarded;
   rooms.set(code, next);
   try {
+    awarded = accounts.award(next, score);
     persist();
   } catch (error) {
+    accounts.state = oldAccounts;
     if (old) rooms.set(code, old);
     else rooms.delete(code);
     throw error;
   }
   emitRoom(code, next);
+  if (awarded) emitAccounts();
 }
+
+function validSocket(socket) {
+  return (
+    !socket.data.accountId ||
+    accounts.valid(socket.data.sessionHash, socket.data.accountId)
+  );
+}
+function resetSocket(socket) {
+  socket.data.accountId = null;
+  socket.data.sessionHash = null;
+  socket.data.playerId = socket.data.guestId;
+  socket.emit("room-left");
+  socket.emit("identity", socket.data.playerId);
+  socket.emit("account-state", null);
+  const room = [...rooms].find(([, r]) =>
+    r.players.some((p) => p.id === socket.data.playerId),
+  );
+  if (room) emitRoom(...room);
+}
+function emitAccounts() {
+  for (const peer of io.sockets.sockets.values())
+    if (validSocket(peer))
+      peer.emit("account-state", accounts.profile(peer.data.accountId));
+  io.emit("leaderboard-state", accounts.leaderboard());
+}
+function accountTransaction(fn) {
+  const oldState = structuredClone(accounts.state),
+    oldRooms = new Map(rooms);
+  try {
+    const result = fn();
+    persist();
+    return result;
+  } catch (error) {
+    accounts.state = oldState;
+    rooms = oldRooms;
+    throw error;
+  }
+}
+function authAllowed(socket) {
+  const entry = [...rooms].find(([, r]) =>
+    r.players.some((p) => p.id === socket.data.playerId),
+  );
+  assert(!entry?.[1].game, "כדי להחליף חשבון יש לצאת מהחדר לאחר סיום המשחק");
+  return entry;
+}
+async function authenticate(socket, data, register) {
+  authAllowed(socket);
+  socket.data.authBusy = true;
+  try {
+    const originalId = socket.data.playerId;
+    const credentials = await accounts.credentials(
+      data.username,
+      data.password,
+      register,
+      socket.handshake.address,
+    );
+    assert(
+      socket.connected && socket.data.playerId === originalId,
+      "החיבור השתנה. נסה להתחבר מחדש",
+    );
+    const current = authAllowed(socket);
+    let user, session;
+    accountTransaction(() => {
+      user = register
+        ? accounts.register(credentials, data.displayName)
+        : accounts.user(credentials.id);
+      const existing = [...rooms].find(([, r]) =>
+        r.players.some((p) => p.id === user.id),
+      );
+      assert(
+        !current || !existing || originalId === user.id,
+        "החשבון כבר נמצא בחדר. צא ממושב האורח ואז התחבר כדי לחזור למושב החשבון",
+      );
+      if (current && originalId !== user.id) {
+        const [code, r] = current;
+        rooms.set(code, {
+          ...r,
+          hostId: r.hostId === originalId ? user.id : r.hostId,
+          players: r.players.map((p) =>
+            p.id === originalId
+              ? {
+                  ...p,
+                  id: user.id,
+                  accountId: user.id,
+                  name: user.displayName,
+                }
+              : p,
+          ),
+        });
+      }
+      session = accounts.issue(user.id, socket.data.sessionHash);
+    });
+    socket.data.playerId = user.id;
+    socket.data.accountId = user.id;
+    socket.data.sessionHash = session.hash;
+    socket.emit("room-left");
+    socket.emit("identity", user.id);
+    socket.emit("account-state", accounts.profile(user.id));
+    const room = [...rooms].find(([, r]) =>
+      r.players.some((p) => p.id === user.id),
+    );
+    if (room) emitRoom(...room);
+    if (current && (!room || current[0] !== room[0]))
+      emitRoom(current[0], rooms.get(current[0]));
+    return { accountToken: session.token, profile: accounts.profile(user.id) };
+  } finally {
+    socket.data.authBusy = false;
+  }
+}
+
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   if (typeof token !== "string" || !/^[0-9a-f-]{36}$/i.test(token))
@@ -118,15 +249,24 @@ io.use((socket, next) => {
     id = randomUUID();
     identities.set(token, id);
   }
-  socket.data.playerId = id;
+  socket.data.guestId = id;
+  const session = accounts.session(socket.handshake.auth?.accountToken);
+  socket.data.accountId = session?.userId || null;
+  socket.data.sessionHash = session?.hash || null;
+  socket.data.playerId = session?.userId || id;
   next();
 });
 io.on("connection", (socket) => {
   let windowStart = Date.now(),
     requestCount = 0;
   function on(event, handler) {
-    socket.on(event, (data, ack) => {
+    socket.on(event, async (data, ack) => {
       if (typeof ack !== "function") return;
+      if (socket.data.authBusy) {
+        ack({ success: false, message: "ממתינים לסיום ההתחברות" });
+        return;
+      }
+      if (!validSocket(socket)) resetSocket(socket);
       if (Date.now() - windowStart > 10_000) {
         windowStart = Date.now();
         requestCount = 0;
@@ -136,7 +276,7 @@ io.on("connection", (socket) => {
         return;
       }
       try {
-        const result = handler(data || {});
+        const result = await handler(data || {});
         ack({ success: true, ...result });
       } catch (error) {
         console.error(event, error.message);
@@ -148,15 +288,27 @@ io.on("connection", (socket) => {
     });
   }
   socket.emit("identity", socket.data.playerId);
+  socket.emit("account-state", accounts.profile(socket.data.accountId));
   const current = [...rooms].find(([, r]) =>
     r.players.some((p) => p.id === socket.data.playerId),
   );
   if (current) emitRoom(...current);
+  on("get-leaderboard", () => ({ leaders: accounts.leaderboard() }));
+  on("register", (data) => authenticate(socket, data, true));
+  on("login", (data) => authenticate(socket, data, false));
+  on("logout", () => {
+    const hash = socket.data.sessionHash;
+    accountTransaction(() => accounts.revoke(hash));
+    for (const peer of io.sockets.sockets.values())
+      if (peer.data.sessionHash === hash && hash) resetSocket(peer);
+    return {};
+  });
   on("resume", () => {
     const entry = [...rooms].find(([, r]) =>
       r.players.some((p) => p.id === socket.data.playerId),
     );
     if (entry) emitRoom(...entry);
+    socket.emit("account-state", accounts.profile(socket.data.accountId));
     return { playerId: socket.data.playerId };
   });
   on(
@@ -174,7 +326,9 @@ io.on("connection", (socket) => {
         "כבר הצטרפת לחדר",
       );
       assert(["base", "cities-knights"].includes(mode), "מצב משחק לא חוקי");
-      const name = String(playerName || "").trim();
+      const name =
+        accounts.user(socket.data.accountId)?.displayName ||
+        String(playerName || "").trim();
       assert(name.length > 0 && name.length <= 30, "כתוב שם באורך 1–30 תווים");
       assert(rooms.size < 500, "השרת מלא כרגע");
       let code;
@@ -183,7 +337,9 @@ io.on("connection", (socket) => {
       } while (rooms.has(code));
       saveRoom(code, {
         hostId: socket.data.playerId,
-        players: [{ id: socket.data.playerId, name }],
+        players: [
+          { id: socket.data.playerId, name, accountId: socket.data.accountId },
+        ],
         game: null,
         mode,
         seafarers: !!seafarers,
@@ -206,11 +362,16 @@ io.on("connection", (socket) => {
     }
     assert(!room.game, "המשחק כבר התחיל");
     assert(room.players.length < 4, "החדר מלא");
-    const name = String(playerName || "").trim();
+    const name =
+      accounts.user(socket.data.accountId)?.displayName ||
+      String(playerName || "").trim();
     assert(name.length > 0 && name.length <= 30, "כתוב שם באורך 1–30 תווים");
     saveRoom(code, {
       ...room,
-      players: [...room.players, { id: socket.data.playerId, name }],
+      players: [
+        ...room.players,
+        { id: socket.data.playerId, name, accountId: socket.data.accountId },
+      ],
     });
     return {};
   });
@@ -240,6 +401,11 @@ io.on("connection", (socket) => {
     );
     saveRoom(code, {
       ...room,
+      matchId: randomUUID(),
+      ranked:
+        room.players.every((p) => !!p.accountId) &&
+        new Set(room.players.map((p) => p.accountId)).size ===
+          room.players.length,
       game: createGame(room.players, Math.random, {
         mode: room.mode || "base",
         seafarers: !!room.seafarers,
