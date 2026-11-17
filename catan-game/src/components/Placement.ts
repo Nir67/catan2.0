@@ -5,7 +5,7 @@ import { TRACKS } from "../../shared/expansion.js";
 export type PickRequest = {
   title: string;
   action: { type: string; [key: string]: unknown };
-  field: "vertexId" | "edgeId" | "destination";
+  field: "vertexId" | "edgeId" | "destination" | "choice";
 };
 export type Placement = PickRequest & { vertices: string[]; edges: string[] };
 export function placementFor(
@@ -17,6 +17,23 @@ export function placementFor(
     edges: string[] = [];
   const action = pick.action,
     active = g.players[g.currentPlayerIndex].id === id;
+  if (
+    g.stage === "expansion-choice" &&
+    g.choice?.playerId === id &&
+    action.type === "expansion-choice"
+  ) {
+    const geometry = boardFor(g),
+      options = g.choice.options ?? [];
+    return {
+      ...pick,
+      vertices: options
+        .filter((o) => geometry.vertices.some((v) => v.id === o.id))
+        .map((o) => o.id),
+      edges: options
+        .filter((o) => geometry.edges.some((e) => e.id === o.id))
+        .map((o) => o.id),
+    };
+  }
   if (!active || g.winner) return { ...pick, vertices, edges };
   const cities = g.buildings.filter(
     (b) => b.playerId === id && b.type === "city",

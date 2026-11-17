@@ -1,3 +1,12 @@
+import robberPiece from "./assets/pieces/robber-painted.png";
+import { SeaFrame } from "./components/SeaFrame";
+import {
+  HarborArt,
+  BarbarianTrack,
+  GameDice,
+} from "./components/BoardOrnaments";
+import { knightRanks } from "./components/pieceRanks";
+import { KnightArt, WallArt } from "./components/PieceArt";
 import { useEffect, useState } from "react";
 import { socket, saveAccountToken } from "./socket";
 import { AccountCenter } from "./components/Account";
@@ -59,16 +68,6 @@ const names: Record<Resource, string> = {
   paper: "נייר",
   cloth: "בד",
   coin: "מטבעות",
-};
-const icons: Record<Resource, string> = {
-  wood: "🌲",
-  brick: "🧱",
-  sheep: "🐑",
-  wheat: "🌾",
-  stone: "⛰️",
-  paper: "📜",
-  cloth: "🧵",
-  coin: "🪙",
 };
 const cardNames: Record<DevelopmentType, string> = {
   knight: "אביר",
@@ -179,6 +178,7 @@ function Board({
   disabled,
   viewBox,
   placement,
+  onKnightClick,
 }: {
   g: View;
   mode: Build | null;
@@ -186,6 +186,7 @@ function Board({
   disabled: boolean;
   viewBox: string;
   placement: Placement | null;
+  onKnightClick: (playerId: string) => void;
 }) {
   const { vertices: VERTICES, edges: EDGES, ports: PORTS } = boardFor(g);
   const roadIds = new Set(
@@ -223,6 +224,7 @@ function Board({
           </clipPath>
         ))}
       </defs>
+      <SeaFrame g={g} />
       {g.tiles.map((t) => (
         <g key={t.id}>
           {["sea", "gold"].includes(t.resource) ? (
@@ -297,19 +299,14 @@ function Board({
           )}
           {g.robber === t.id && (
             <g aria-label="שודד">
-              <ellipse
-                cx={t.x}
-                cy={t.y - 17}
-                rx="14"
-                ry="6"
-                fill="#12232b"
-                opacity=".3"
-              />
-              <path
-                d={`M ${t.x - 11} ${t.y - 19} L ${t.x - 6} ${t.y - 40} Q ${t.x - 14} ${t.y - 55} ${t.x} ${t.y - 55} Q ${t.x + 14} ${t.y - 55} ${t.x + 6} ${t.y - 40} L ${t.x + 11} ${t.y - 19} Z`}
-                fill="#243038"
-                stroke="#fff"
-                strokeWidth="1.5"
+              <image
+                className="robber-piece"
+                href={robberPiece}
+                x={t.x - 19}
+                y={t.y - 51}
+                width="38"
+                height="43"
+                preserveAspectRatio="xMidYMax meet"
               />
             </g>
           )}
@@ -346,31 +343,58 @@ function Board({
           x = port.x + (dx / len) * 31,
           y = port.y + (dy / len) * 31;
         return (
-          <g key={i} className="port">
-            <line
-              x1={port.x}
-              y1={port.y}
-              x2={x}
-              y2={y}
-              stroke="#e9d2a1"
-              strokeWidth="3"
-            />
-            <circle cx={x} cy={y} r="20" fill="#fff4da" />
-            <text
-              x={x}
-              y={y - 2}
-              textAnchor="middle"
-              fontSize="12"
-              fill="#263c45"
+          <g
+            key={i}
+            className="port"
+            role="img"
+            aria-label={`נמל ${port.resource === "any" ? "כללי" : names[port.resource]} ${port.resource === "any" ? "3:1" : "2:1"}`}
+          >
+            <title>
+              {port.resource === "any"
+                ? "נמל כללי · 3 קלפים תמורת אחד"
+                : `נמל ${names[port.resource]} · 2 תמורת אחד`}
+            </title>
+            {port.vertices.map((id) => {
+              const v = VERTICES.find((v) => v.id === id)!;
+              return (
+                <line
+                  key={id}
+                  x1={v.x}
+                  y1={v.y}
+                  x2={x}
+                  y2={y}
+                  stroke="#d1b77d"
+                  strokeWidth="2"
+                  strokeDasharray="3 2"
+                />
+              );
+            })}
+            <svg
+              x={x - 26}
+              y={y - 31}
+              width="52"
+              height="51"
+              viewBox="0 0 52 51"
             >
-              {port.resource === "any" ? "⚓" : icons[port.resource]}
-            </text>
+              <HarborArt kind={port.resource} />
+            </svg>
+            <rect
+              x={x - 12}
+              y={y + 15}
+              width="27"
+              height="13"
+              rx="3"
+              fill="#fff0cf"
+              stroke="#94784e"
+              strokeWidth=".7"
+            />
             <text
-              x={x}
-              y={y + 12}
+              x={x + 1.5}
+              y={y + 24.5}
               textAnchor="middle"
-              fontSize="11"
-              fill="#263c45"
+              fontSize="10"
+              fontWeight="700"
+              fill="#3e443a"
             >
               {port.resource === "any" ? "3:1" : "2:1"}
             </text>
@@ -528,14 +552,17 @@ function Board({
               return (
                 <g key={b.vertexId}>
                   {b.wall && (
-                    <rect
-                      x={v.x - 24}
-                      y={v.y + 12}
-                      width="48"
-                      height="9"
-                      fill="#d6ba75"
-                      stroke="#6e592f"
-                    />
+                    <svg
+                      x={v.x - 32}
+                      y={v.y + 5}
+                      width="64"
+                      height="36"
+                      viewBox="0 0 80 58"
+                      className="city-wall-art"
+                      aria-label="חומת עיר"
+                    >
+                      <WallArt color={b.color} />
+                    </svg>
                   )}
                   {b.metropolis && (
                     <text
@@ -557,43 +584,69 @@ function Board({
               <g
                 key={k.vertexId}
                 className="knight-piece"
+                onClick={() => !placement && onKnightClick(k.playerId)}
+                role="button"
+                tabIndex={placement ? -1 : 0}
+                onKeyDown={(e) => {
+                  if (!placement && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onKnightClick(k.playerId);
+                  }
+                }}
+                style={{ pointerEvents: placement ? "none" : "auto" }}
                 aria-label={`אביר דרגה ${k.level} ${k.active ? "פעיל" : "לא פעיל"}`}
               >
-                <circle
+                <title>
+                  {knightRanks[k.level]} · {k.active ? "פעיל" : "לא פעיל"} ·{" "}
+                  {k.level === 1
+                    ? "כוכב אחד"
+                    : k.level === 2
+                      ? "שני כוכבים"
+                      : "שלושה כוכבים"}
+                </title>
+                <ellipse
                   cx={v.x}
-                  cy={v.y}
-                  r="15"
-                  fill={
-                    k.active
-                      ? {
-                          blue: "#367db8",
-                          red: "#b8413c",
-                          green: "#397346",
-                          yellow: "#d6aa35",
-                        }[k.color]
-                      : "#e0dcd0"
-                  }
-                  stroke={
-                    {
-                      blue: "#367db8",
-                      red: "#b8413c",
-                      green: "#397346",
-                      yellow: "#b88b25",
-                    }[k.color]
-                  }
-                  strokeWidth="4"
+                  cy={v.y + 9}
+                  rx="16"
+                  ry="5"
+                  fill={k.active ? "#c6a247" : "#6c7677"}
+                  stroke={k.active ? "#fff0b3" : "#c2cbca"}
+                  strokeWidth="1.3"
+                />
+                <svg
+                  x={v.x - 18}
+                  y={v.y - 26}
+                  width="36"
+                  height="39"
+                  viewBox="0 0 64 70"
+                >
+                  <KnightArt
+                    color={k.color}
+                    level={k.level}
+                    active={k.active}
+                  />
+                </svg>
+                <circle
+                  cx={v.x + 12}
+                  cy={v.y + 9}
+                  r="4"
+                  fill={k.active ? "#4f9b56" : "#808986"}
+                  stroke="#fff2d5"
+                  strokeWidth="1"
                 />
                 <text
+                  className="knight-state-label"
                   x={v.x}
-                  y={v.y + 5}
+                  y={v.y + 22}
                   textAnchor="middle"
-                  fontSize="18"
-                  fill={k.active ? "white" : "#5b6769"}
+                  fontSize="6.5"
+                  fontWeight="700"
+                  fill="#fff6da"
+                  stroke="#344844"
+                  strokeWidth="1.6"
+                  paintOrder="stroke"
                 >
-                  ♞
-                </text>
-                <text x={v.x + 13} y={v.y + 17} fontSize="10" fill="#fff">
-                  {k.level}
+                  {k.active ? "פעיל" : "לא פעיל"}
                 </text>
               </g>
             );
@@ -950,16 +1003,30 @@ function Game({
   connected: boolean;
 }) {
   const [zoomControls, setZoomControls] = useState<HTMLDivElement | null>(null);
+  const [armyOpen, setArmyOpen] = useState(false);
   const [tool, setTool] = useState(""),
     [pick, setPick] = useState<(PickRequest & { turn: number }) | null>(null);
   const chooseOnBoard = (request: PickRequest) => {
     setPick({ ...request, turn: g.turnNumber });
     setBuild(null);
   };
-  const placement =
-    pick &&
-    pick.turn === g.turnNumber &&
-    ["action", "setup-road", "road-building"].includes(g.stage)
+  const geometry = boardFor(g),
+    boardChoice =
+      g.choice?.playerId === id &&
+      g.choice.options?.some(
+        (o) =>
+          geometry.vertices.some((v) => v.id === o.id) ||
+          geometry.edges.some((e) => e.id === o.id),
+      );
+  const placement = boardChoice
+    ? placementFor(g, id, {
+        title: g.choice!.title + " · לחץ על הלוח",
+        action: { type: "expansion-choice" },
+        field: "choice",
+      })
+    : pick &&
+        pick.turn === g.turnNumber &&
+        ["action", "setup-road", "road-building"].includes(g.stage)
       ? placementFor(g, id, pick)
       : null;
   const [menu, setMenu] = useState(true),
@@ -1094,6 +1161,45 @@ function Game({
                 </p>
               </div>
               <div className="side-zoom" ref={setZoomControls} />
+              {g.mode === "cities-knights" && (
+                <>
+                  <BarbarianTrack g={g} />
+                  <div className="army-anchor">
+                    <button
+                      className="army-toggle"
+                      aria-expanded={armyOpen}
+                      disabled={!g.knightPieces?.some((k) => k.playerId === id)}
+                      onClick={() => setArmyOpen(!armyOpen)}
+                    >
+                      האבירים שלי ·{" "}
+                      {g.knightPieces?.filter((k) => k.playerId === id)
+                        .length ?? 0}
+                    </button>
+                    {armyOpen && (
+                      <div className="army-popover">
+                        <button
+                          className="army-close"
+                          aria-label="סגור ניהול אבירים"
+                          onClick={() => setArmyOpen(false)}
+                        >
+                          ×
+                        </button>
+                        <ExpansionPanel
+                          g={g}
+                          id={id}
+                          send={doAction}
+                          busy={disabled}
+                          section="knights"
+                          onPick={(request) => {
+                            chooseOnBoard(request);
+                            setArmyOpen(false);
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>{" "}
             <BoardZoom seafarers={!!g.seafarers} controls={zoomControls}>
               {(viewBox) => (
@@ -1101,9 +1207,12 @@ function Game({
                   g={g}
                   mode={mode}
                   send={doAction}
-                  disabled={disabled || !active}
+                  disabled={disabled || (!active && !boardChoice)}
                   viewBox={viewBox}
                   placement={placement}
+                  onKnightClick={(owner) => {
+                    if (owner === id) setArmyOpen(true);
+                  }}
                 />
               )}
             </BoardZoom>
@@ -1158,15 +1267,7 @@ function Game({
         <aside className="sidebar">
           {!g.winner && (
             <section className="panel turn-controls">
-              <div className="dice">
-                <span>{g.dice?.[0] ?? "?"}</span>
-                <span>{g.dice?.[1] ?? "?"}</span>
-                <b>
-                  {g.hasRolled && g.dice
-                    ? `סכום ${g.dice[0] + g.dice[1]}`
-                    : "לפני גלגול"}
-                </b>
-              </div>
+              <GameDice g={g} />
               <div className="button-row">
                 {active && g.stage === "pre-roll" && (
                   <button
@@ -1359,12 +1460,9 @@ function Game({
                             })
                           }
                         >
-                          <span
-                            className="build-symbol knight-symbol"
-                            aria-hidden="true"
-                          >
-                            ♞
-                          </span>
+                          <KnightArt
+                            color={g.players.find((p) => p.id === id)!.color}
+                          />
                           <span>
                             <strong>אביר</strong>
                             <small>1 צמר + 1 אבן</small>
@@ -1395,12 +1493,9 @@ function Game({
                             })
                           }
                         >
-                          <span
-                            className="build-symbol wall-symbol"
-                            aria-hidden="true"
-                          >
-                            ▥
-                          </span>
+                          <WallArt
+                            color={g.players.find((p) => p.id === id)!.color}
+                          />
                           <span>
                             <strong>חומה</strong>
                             <small>2 לבנים</small>
@@ -1439,22 +1534,23 @@ function Game({
                 ))}
               </section>
             )}
-            {g.mode === "cities-knights" && (
-              <ExpansionPanel
-                g={g}
-                id={id}
-                send={doAction}
-                busy={disabled}
-                onPick={chooseOnBoard}
-                section={
-                  tool === "cities"
-                    ? "cities"
-                    : tool === "cards"
-                      ? "cards"
-                      : "knights"
-                }
-              />
-            )}
+            {g.mode === "cities-knights" &&
+              ["cities", "cards"].includes(tool) && (
+                <ExpansionPanel
+                  g={g}
+                  id={id}
+                  send={doAction}
+                  busy={disabled}
+                  onPick={chooseOnBoard}
+                  section={
+                    tool === "cities"
+                      ? "cities"
+                      : tool === "cards"
+                        ? "cards"
+                        : "knights"
+                  }
+                />
+              )}
             {g.stage === "action" && tool === "trade" && (
               <TradePanel
                 key={`trade-${g.turnNumber}`}

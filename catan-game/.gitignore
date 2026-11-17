@@ -25,3 +25,6 @@ dist-ssr
 
 # Server saves contain private hands and session identities
 .data/
+.env
+.env.*
+!.env.example

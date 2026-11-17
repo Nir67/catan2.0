@@ -1,3 +1,5 @@
+import { knightRanks } from "./pieceRanks";
+import { KnightArt } from "./PieceArt";
 import type { PickRequest } from "./Placement";
 import { useState } from "react";
 import type { View, Resource, Track, Hand } from "../../shared/engine.js";
@@ -110,6 +112,13 @@ export function ExpansionChoice(props: Props) {
   const { g, id, send, busy } = props,
     c = g.choice;
   if (!c) return null;
+  const geometry = boardFor(g),
+    boardOptions = c.options?.filter(
+      (o) =>
+        geometry.vertices.some((v) => v.id === o.id) ||
+        geometry.edges.some((e) => e.id === o.id),
+    ),
+    hasBoardOptions = !!boardOptions?.length;
   return (
     <section className="panel urgent expansion-choice">
       <h2>{c.title}</h2>
@@ -117,15 +126,18 @@ export function ExpansionChoice(props: Props) {
         <p>ממתינים ל־{g.players.find((p) => p.id === c.playerId)?.name}</p>
       ) : c.options ? (
         <div className="choice-options">
-          {c.options.map((o) => (
-            <button
-              key={o.id}
-              disabled={busy}
-              onClick={() => send({ type: "expansion-choice", choice: o.id })}
-            >
-              {o.label}
-            </button>
-          ))}
+          {hasBoardOptions && <p>לחץ על אחד המקומות המודגשים בלוח.</p>}
+          {c.options
+            .filter((o) => !boardOptions?.includes(o))
+            .map((o) => (
+              <button
+                key={o.id}
+                disabled={busy}
+                onClick={() => send({ type: "expansion-choice", choice: o.id })}
+              >
+                {o.label}
+              </button>
+            ))}
         </div>
       ) : (
         <CardChoice key={`${g.revision}-${c.kind}`} {...props} />
@@ -352,26 +364,7 @@ export function ExpansionStatus({ g }: { g: View }) {
   return (
     <section className="panel expansion-status">
       <span className="eyebrow">ערים ואבירים · יעד {g.targetScore} נקודות</span>
-      <h2>הברברים בדרך</h2>
-      <div
-        className="barbarian-track"
-        aria-label={`הברברים התקדמו ${g.barbarianPosition} מתוך 7`}
-      >
-        {Array.from({ length: 8 }, (_, i) => (
-          <span
-            className={
-              i === g.barbarianPosition
-                ? "ship"
-                : i < g.barbarianPosition!
-                  ? "passed"
-                  : ""
-            }
-            key={i}
-          >
-            {i === g.barbarianPosition ? "⛵" : i === 7 ? "⚔" : i}
-          </span>
-        ))}
-      </div>
+      <h2>מצב הברברים</h2>
       <p>
         {g.barbarianPosition === 6
           ? "הפלישה תגיע בגלגול הספינה הבא"
@@ -426,7 +419,8 @@ export function ExpansionPanel(
           return (
             <div className="knight-control" key={k.vertexId}>
               <strong>
-                אביר {index + 1} · דרגה {k.level} ·{" "}
+                <KnightArt color={k.color} level={k.level} active={k.active} />
+                אביר {index + 1} · {knightRanks[k.level]} ·{" "}
                 {k.active ? "פעיל" : "לא פעיל"}
               </strong>
               <div className="button-row">
@@ -498,14 +492,17 @@ export function ExpansionPanel(
           return (
             <div key={t} className={`improvement ${t}`}>
               <strong>
-                {trackNames[t]} · דרגה {level}/5
+                {trackNames[t]} <small>{level}/5</small>
               </strong>
-              <div className="levels">
+              <div
+                className="levels"
+                aria-label={`${trackNames[t]} דרגה ${level} מתוך 5`}
+              >
                 {Array.from({ length: 5 }, (_, i) => (
                   <span className={i < level ? "filled" : ""} key={i} />
                 ))}
               </div>
-              <p>
+              <p className="improvement-benefit">
                 {t === "science"
                   ? "דרגה 3: אמת מים — משאב כשלא הופקו חומרים"
                   : t === "politics"
@@ -546,10 +543,14 @@ export function ExpansionPanel(
             </div>
           );
         })}
-        <p className="muted">
-          מטרופולין מעניק שתי נקודות נוספות ומוגן מברברים. כשהשיפור דורש עיר,
-          בוחרים אותה על הלוח.
-        </p>
+        <details className="city-help">
+          <summary>יכולות ומטרופולינים</summary>
+          <p>
+            בדרגה 3: מדע מעניק אמת מים, פוליטיקה מאפשרת אבירים אדירים, ומסחר
+            מעניק החלפת סחורות ביחס 2:1. מדרגה 4 אפשר לזכות במטרופולין ששווה שתי
+            נקודות ומוגן מברברים.
+          </p>
+        </details>
       </section>
       <section className="panel progress-tools">
         <h2>

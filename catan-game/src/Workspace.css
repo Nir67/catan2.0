@@ -694,3 +694,338 @@
     animation: none;
   }
 }
+.piece-art {
+  display: block;
+  overflow: visible;
+  flex: none;
+}
+.build-options .piece-art {
+  width: 52px;
+  height: 49px;
+  filter: drop-shadow(0 2px 1px #253b3328);
+}
+.build-options .wall-art {
+  height: 43px;
+}
+.knight-control > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.knight-control > strong .piece-art {
+  width: 30px;
+  height: 34px;
+}
+.city-wall-art {
+  pointer-events: none;
+}
+.is-playing .city-tools .improvement {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 12px;
+  padding: 12px;
+  border: 1px solid #d7d9c8;
+  border-inline-start: 3px solid #829875;
+  border-radius: 5px;
+  margin: 0 0 8px;
+  background: #eeeee1;
+  min-height: 65px;
+}
+.is-playing .city-tools .improvement.politics {
+  border-inline-start-color: #597e9a;
+}
+.is-playing .city-tools .improvement.trade {
+  border-inline-start-color: #b19448;
+}
+.city-tools .improvement > strong {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+}
+.city-tools .improvement > strong small {
+  font-size: 11px;
+  color: #6b7a66;
+  font-variant-numeric: tabular-nums;
+}
+.city-tools .improvement .levels {
+  grid-column: 1;
+  grid-row: 2;
+  gap: 4px;
+  align-self: start;
+  margin: 0;
+}
+.city-tools .improvement > button {
+  grid-column: 2;
+  grid-row: 1/3;
+  margin: 0;
+  padding: 7px 10px;
+  align-self: center;
+  font-size: 11px;
+  min-height: 36px;
+}
+.city-tools .improvement .improvement-benefit {
+  display: none;
+}
+.city-help {
+  font-size: 11px;
+  color: #64735c;
+  margin-top: 10px;
+}
+.city-help p {
+  font-size: 11px;
+  line-height: 1.7;
+}
+.city-tools > h2 {
+  margin-bottom: 12px;
+}
+.piece-art {
+  overflow: hidden !important;
+}
+.knight-art.inactive {
+  filter: saturate(0.65) brightness(0.95);
+}
+.knight-art.active {
+  filter: drop-shadow(0 0 1px #f8d66b);
+}
+.harbor-art {
+  overflow: hidden !important;
+}
+.game-dice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.game-die {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  filter: drop-shadow(0 2px 1px #354c3320);
+}
+.game-dice > b {
+  font-size: 11px;
+  color: #788269;
+  margin-inline-start: auto;
+  font-weight: 500;
+}
+.sea-invasion {
+  margin: 16px 0 10px;
+  text-align: right;
+  color: #e3dfc7;
+}
+.invasion-heading,
+.invasion-strength {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.invasion-heading strong {
+  font-size: 12px;
+}
+.invasion-heading > span {
+  font-size: 9px;
+  color: #b9c8b6;
+}
+.sea-invasion > svg {
+  display: block;
+  width: 100%;
+  margin: 7px 0;
+}
+.invasion-strength {
+  font-size: 10px;
+}
+.invasion-strength b {
+  font-size: 13px;
+  margin-inline-start: 4px;
+  color: #f6e4a9;
+}
+.sea-invasion.imminent > svg {
+  filter: drop-shadow(0 0 3px #df9a47);
+}
+.sea-invasion > p {
+  font-size: 9px;
+  color: #f4c785;
+  margin: 5px 0;
+}
+.army-anchor {
+  position: relative;
+}
+.army-toggle {
+  width: 100%;
+  font-size: 11px;
+  padding: 8px;
+  color: #e6e0c7;
+  background: #29484e;
+  border: 1px solid #718b80;
+}
+.army-popover {
+  position: absolute;
+  z-index: 40;
+  inset-inline-end: 100%;
+  top: 0;
+  width: 280px;
+  max-height: 330px;
+  overflow: auto;
+  margin-inline-end: 8px;
+  box-shadow: 0 8px 35px #142e4155;
+  border-radius: 6px;
+  background: #fffdf4;
+  color: #3a4f45;
+  text-align: right;
+}
+.army-popover .panel {
+  padding: 15px;
+  border: 0;
+  margin: 0;
+}
+.army-popover .army-close {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 2px 7px;
+  border: 0;
+  background: none;
+  font-size: 20px;
+}
+.army-popover h2 {
+  font-size: 15px;
+}
+.army-popover .knight-control {
+  padding: 9px 0;
+}
+.army-popover .button-row {
+  gap: 5px;
+  display: flex;
+  flex-wrap: wrap;
+}
+.army-popover .button-row button {
+  font-size: 10px;
+  padding: 7px;
+  min-height: 32px;
+}
+.army-popover .knight-control > button {
+  font-size: 10px;
+  padding: 7px;
+}
+.army-popover .muted {
+  font-size: 10px;
+  line-height: 1.6;
+}
+.knight-piece[role="button"] {
+  cursor: pointer;
+}
+.knight-piece:focus-visible {
+  outline: none;
+  filter: drop-shadow(0 0 3px #ffe09a);
+}
+.city-wall-art .wall-art {
+  overflow: hidden !important;
+}
+@media (max-width: 899px) {
+  .board-status {
+    flex-wrap: wrap;
+  }
+  .board-status > .sea-invasion {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: 1fr 140px;
+    gap: 3px 10px;
+    margin: 4px 0;
+  }
+  .sea-invasion > svg {
+    grid-column: 2;
+    grid-row: 1/3;
+    width: 140px;
+    margin: 0;
+  }
+  .invasion-strength {
+    grid-column: 1;
+  }
+  .army-anchor {
+    flex-basis: 100%;
+  }
+  .army-toggle {
+    padding: 5px;
+  }
+  .army-popover {
+    position: fixed;
+    top: auto;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    inset-inline-end: auto;
+    width: auto;
+    margin: 0;
+    max-height: 45vh;
+  }
+  .game-die {
+    width: 36px;
+    height: 36px;
+  }
+}
+.die-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 48px;
+}
+.die-group > small {
+  font-size: 8px;
+  color: #7b806c;
+  white-space: nowrap;
+}
+.game-dice {
+  margin-bottom: 4px;
+  gap: 7px;
+}
+.game-dice .game-die {
+  width: 44px;
+  height: 46px;
+}
+.dice-roles {
+  font-size: 9px !important;
+  text-align: center;
+  color: #8b8b75;
+  margin: 4px 0 10px !important;
+  line-height: 1.4;
+}
+.game-dice > b {
+  align-self: center;
+}
+.sea-invasion .invasion-heading strong {
+  color: #f1e4be;
+}
+.robber-piece {
+  filter: drop-shadow(0 2px 1px #1b2e3c66);
+}
+.game-dice .game-die.red,
+.game-dice .game-die.yellow,
+.game-dice .game-die.ivory,
+.game-dice .game-die.event {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0;
+}
+.army-popover {
+  inset-inline-start: 100%;
+  inset-inline-end: auto;
+  margin-inline-start: 8px;
+  margin-inline-end: 0;
+}
+@media (max-width: 899px) {
+  .army-popover {
+    inset-inline-start: auto;
+    inset-inline-end: auto;
+    margin: 0;
+  }
+}

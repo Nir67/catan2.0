@@ -2,7 +2,8 @@ import { Accounts, newAccountState } from "./accounts.js";
 import express from "express";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { openStore } from "./storage.js";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
@@ -26,50 +27,34 @@ const dataFile =
 const accounts = new Accounts();
 let rooms = new Map(),
   identities = new Map();
-try {
-  const data = JSON.parse(readFileSync(dataFile, "utf8"));
-  if (data.version !== 1) throw new Error("Unsupported save version");
+if (process.env.RENDER && !process.env.DATABASE_URL)
+  throw new Error("DATABASE_URL is required for durable cloud storage");
+const storage = await openStore({
+  databaseUrl: process.env.DATABASE_URL,
+  dataFile,
+});
+function hydrate(data) {
+  if (!data) return;
+  if (data.version !== 1) throw Error("Unsupported save version");
   rooms = new Map(data.rooms);
-  identities = new Map(data.identities);
+  identities = new Map([...data.identities, ...identities]);
   accounts.state = data.accounts || newAccountState();
-} catch (error) {
-  if (error.code !== "ENOENT") {
-    console.error(
-      "Cannot read saved games. Refusing to overwrite them.",
-      error,
-    );
-    process.exit(1);
-  }
 }
-function persist() {
-  mkdirSync(dirname(dataFile), { recursive: true });
-  writeFileSync(
-    `${dataFile}.tmp`,
-    JSON.stringify({
-      version: 1,
-      rooms: [...rooms],
-      identities: [...identities],
-      accounts: accounts.state,
-    }),
-    { mode: 0o600 },
-  );
-  for (let attempt = 0; ; attempt++) {
-    try {
-      renameSync(`${dataFile}.tmp`, dataFile);
-      break;
-    } catch (error) {
-      // Windows scanners can briefly lock the destination between two saves.
-      if (!["EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt >= 5)
-        throw error;
-      Atomics.wait(
-        new Int32Array(new SharedArrayBuffer(4)),
-        0,
-        0,
-        20 * (attempt + 1),
-      );
-    }
-  }
+try {
+  hydrate(await storage.load());
+} catch {
+  console.error("Cannot read saved games. Refusing to overwrite them.");
+  process.exit(1);
 }
+async function persist() {
+  await storage.save({
+    version: 1,
+    rooms: [...rooms],
+    identities: [...identities],
+    accounts: accounts.state,
+  });
+}
+let operations = Promise.resolve();
 const online = (id) =>
   [...io.sockets.sockets.values()].some((s) => s.data.playerId === id);
 const codeOf = (value) =>
@@ -112,14 +97,14 @@ function emitRoom(code, room) {
         socket.emit("game-state", viewFor(room.game, socket.data.playerId));
     }
 }
-function saveRoom(code, next) {
+async function saveRoom(code, next) {
   const old = rooms.get(code),
     oldAccounts = structuredClone(accounts.state);
   let awarded;
   rooms.set(code, next);
   try {
     awarded = accounts.award(next, score);
-    persist();
+    await persist();
   } catch (error) {
     accounts.state = oldAccounts;
     if (old) rooms.set(code, old);
@@ -154,12 +139,12 @@ function emitAccounts() {
       peer.emit("account-state", accounts.profile(peer.data.accountId));
   io.emit("leaderboard-state", accounts.leaderboard());
 }
-function accountTransaction(fn) {
+async function accountTransaction(fn) {
   const oldState = structuredClone(accounts.state),
     oldRooms = new Map(rooms);
   try {
     const result = fn();
-    persist();
+    await persist();
     return result;
   } catch (error) {
     accounts.state = oldState;
@@ -191,7 +176,7 @@ async function authenticate(socket, data, register) {
     );
     const current = authAllowed(socket);
     let user, session;
-    accountTransaction(() => {
+    await accountTransaction(() => {
       user = register
         ? accounts.register(credentials, data.displayName)
         : accounts.user(credentials.id);
@@ -259,31 +244,51 @@ io.on("connection", (socket) => {
   let windowStart = Date.now(),
     requestCount = 0;
   function on(event, handler) {
-    socket.on(event, async (data, ack) => {
-      if (typeof ack !== "function") return;
-      if (socket.data.authBusy) {
-        ack({ success: false, message: "ממתינים לסיום ההתחברות" });
-        return;
-      }
-      if (!validSocket(socket)) resetSocket(socket);
-      if (Date.now() - windowStart > 10_000) {
-        windowStart = Date.now();
-        requestCount = 0;
-      }
-      if (++requestCount > 120) {
-        ack({ success: false, message: "יותר מדי פעולות — המתן רגע" });
-        return;
-      }
-      try {
-        const result = await handler(data || {});
-        ack({ success: true, ...result });
-      } catch (error) {
-        console.error(event, error.message);
-        ack({
-          success: false,
-          message: error.code ? "לא ניתן לשמור את המשחק כרגע" : error.message,
+    socket.on(event, (data, ack) => {
+      operations = operations
+        .then(async () => {
+          if (typeof ack !== "function") return;
+          if (socket.data.authBusy) {
+            ack({ success: false, message: "ממתינים לסיום ההתחברות" });
+            return;
+          }
+          if (storage.remote) {
+            try {
+              hydrate(await storage.load());
+            } catch {
+              ack({
+                success: false,
+                message: "אין חיבור למסד הנתונים. נסה שוב בעוד רגע",
+              });
+              return;
+            }
+          }
+          if (!validSocket(socket)) resetSocket(socket);
+          if (Date.now() - windowStart > 10_000) {
+            windowStart = Date.now();
+            requestCount = 0;
+          }
+          if (++requestCount > 120) {
+            ack({ success: false, message: "יותר מדי פעולות — המתן רגע" });
+            return;
+          }
+          try {
+            const result = await handler(data || {});
+            ack({ success: true, ...result });
+          } catch (error) {
+            console.error(event, error.message);
+            ack({
+              success: false,
+              message: error.code
+                ? "לא ניתן לשמור את המשחק כרגע"
+                : error.message,
+            });
+          }
+        })
+        .catch(() => {
+          if (typeof ack === "function")
+            ack({ success: false, message: "לא ניתן להשלים את הפעולה כרגע" });
         });
-      }
     });
   }
   socket.emit("identity", socket.data.playerId);
@@ -295,9 +300,9 @@ io.on("connection", (socket) => {
   on("get-leaderboard", () => ({ leaders: accounts.leaderboard() }));
   on("register", (data) => authenticate(socket, data, true));
   on("login", (data) => authenticate(socket, data, false));
-  on("logout", () => {
+  on("logout", async () => {
     const hash = socket.data.sessionHash;
-    accountTransaction(() => accounts.revoke(hash));
+    await accountTransaction(() => accounts.revoke(hash));
     for (const peer of io.sockets.sockets.values())
       if (peer.data.sessionHash === hash && hash) resetSocket(peer);
     return {};
@@ -312,7 +317,12 @@ io.on("connection", (socket) => {
   });
   on(
     "create-room",
-    ({ playerName, mode = "base", seafarers = false, ranked = false }) => {
+    async ({
+      playerName,
+      mode = "base",
+      seafarers = false,
+      ranked = false,
+    }) => {
       assert(
         ![...rooms.values()].some((r) =>
           r.players.some((p) => p.id === socket.data.playerId && !p.left),
@@ -330,7 +340,7 @@ io.on("connection", (socket) => {
       do {
         code = randomUUID().replaceAll("-", "").slice(0, 5).toUpperCase();
       } while (rooms.has(code));
-      saveRoom(code, {
+      await saveRoom(code, {
         hostId: socket.data.playerId,
         players: [
           { id: socket.data.playerId, name, accountId: socket.data.accountId },
@@ -344,7 +354,7 @@ io.on("connection", (socket) => {
       return { roomCode: code };
     },
   );
-  on("join-room", ({ roomCode, playerName }) => {
+  on("join-room", async ({ roomCode, playerName }) => {
     const code = codeOf(roomCode),
       room = rooms.get(code);
     assert(room, "החדר לא נמצא");
@@ -360,7 +370,7 @@ io.on("connection", (socket) => {
       (p) => p.id === socket.data.playerId && p.left,
     );
     if (returning) {
-      saveRoom(code, {
+      await saveRoom(code, {
         ...room,
         players: room.players.map((p) =>
           p.id === returning.id ? { ...p, left: false } : p,
@@ -374,7 +384,7 @@ io.on("connection", (socket) => {
       accounts.user(socket.data.accountId)?.displayName ||
       String(playerName || "").trim();
     assert(name.length > 0 && name.length <= 30, "כתוב שם באורך 1–30 תווים");
-    saveRoom(code, {
+    await saveRoom(code, {
       ...room,
       players: [
         ...room.players,
@@ -383,7 +393,7 @@ io.on("connection", (socket) => {
     });
     return {};
   });
-  on("set-mode", ({ mode, seafarers, ranked }) => {
+  on("set-mode", async ({ mode, seafarers, ranked }) => {
     const [code, room] = roomFor(socket);
     assert(
       room.hostId === socket.data.playerId && !room.game,
@@ -394,7 +404,7 @@ io.on("connection", (socket) => {
       ranked === undefined || typeof ranked === "boolean",
       "בחר משחק מדורג או משחק חברים",
     );
-    saveRoom(code, {
+    await saveRoom(code, {
       ...room,
       mode,
       ranked: ranked === undefined ? !!room.ranked : ranked,
@@ -403,7 +413,7 @@ io.on("connection", (socket) => {
     });
     return {};
   });
-  on("start-game", () => {
+  on("start-game", async () => {
     const [code, room] = roomFor(socket);
     assert(room.hostId === socket.data.playerId, "רק המארח יכול להתחיל");
     assert(!room.game, "המשחק כבר התחיל");
@@ -411,7 +421,7 @@ io.on("connection", (socket) => {
       room.players.every((p) => online(p.id)),
       "כל השחקנים צריכים להיות מחוברים",
     );
-    saveRoom(code, {
+    await saveRoom(code, {
       ...room,
       matchId: randomUUID(),
       ranked: !!room.ranked,
@@ -423,19 +433,19 @@ io.on("connection", (socket) => {
     });
     return {};
   });
-  on("game-action", (action) => {
+  on("game-action", async (action) => {
     const [code, room] = roomFor(socket);
     assert(room.game, "המשחק עוד לא התחיל");
-    saveRoom(code, {
+    await saveRoom(code, {
       ...room,
       game: applyAction(room.game, socket.data.playerId, action),
     });
     return {};
   });
-  on("leave-room", () => {
+  on("leave-room", async () => {
     const [code, room] = roomFor(socket);
     if (room.game && !room.game.winner) {
-      saveRoom(code, {
+      await saveRoom(code, {
         ...room,
         players: room.players.map((p) =>
           p.id === socket.data.playerId ? { ...p, left: true } : p,
@@ -447,7 +457,7 @@ io.on("connection", (socket) => {
     }
     const players = room.players.filter((p) => p.id !== socket.data.playerId);
     if (players.length)
-      saveRoom(code, {
+      await saveRoom(code, {
         ...room,
         players,
         hostId: players.some((p) => p.id === room.hostId)
@@ -456,7 +466,7 @@ io.on("connection", (socket) => {
       });
     else {
       rooms.delete(code);
-      persist();
+      await persist();
     }
     socket.emit("room-left");
     return {};
@@ -468,6 +478,12 @@ io.on("connection", (socket) => {
     if (entry) emitRoom(...entry);
   });
 });
+app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
+const clientDist = resolve(dirname(fileURLToPath(import.meta.url)), "dist");
+if (existsSync(resolve(clientDist, "index.html")))
+  app.use(
+    express.static(clientDist, { dotfiles: "deny", index: "index.html" }),
+  );
 app.get("/", (_req, res) =>
   res.json({ status: "ok", game: "CATAN base game" }),
 );
