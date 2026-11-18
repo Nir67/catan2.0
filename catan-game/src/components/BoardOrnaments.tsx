@@ -2,7 +2,7 @@ import shipArt from "../assets/pieces/barbarian-ship.png";
 import scienceCity from "../assets/pieces/city-green.png";
 import politicsCity from "../assets/pieces/city-blue.png";
 import tradeCity from "../assets/pieces/city-yellow.png";
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { View } from "../../shared/engine.js";
 import harbors from "../assets/pieces/harbors-atlas.png";
 export function HarborArt({ kind }: { kind: string }) {
@@ -261,6 +261,23 @@ function NumberDie({ value, color }: { value?: number; color: string }) {
   );
 }
 export function GameDice({ g }: { g: View }) {
+  const diceElement = useRef<HTMLDivElement>(null);
+  const rollKey = g.turnNumber + ":" + g.hasRolled;
+  const previousRoll = useRef(rollKey);
+  useEffect(() => {
+    const changed = previousRoll.current !== rollKey;
+    previousRoll.current = rollKey;
+    if (!changed || !g.hasRolled || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const animations = Array.from(diceElement.current?.querySelectorAll<SVGElement>(".game-die") ?? []).map((die, i) => die.animate([
+      { transform: "translateY(0) rotate(0deg) scale(1)" },
+      { transform: "translateY(-9px) rotate(-24deg) scale(.9)", offset: .16 },
+      { transform: "translateY(2px) rotate(125deg) scale(1.04)", offset: .4 },
+      { transform: "translateY(-6px) rotate(242deg) scale(.94)", offset: .64 },
+      { transform: "translateY(0) rotate(352deg) scale(1.03)", offset: .86 },
+      { transform: "translateY(0) rotate(360deg) scale(1)" },
+    ], { duration: 720 + i * 90, easing: "ease-out" }));
+    return () => animations.forEach(animation => animation.cancel());
+  }, [rollKey, g.hasRolled]);
   const id = useId(),
     event = g.eventDie,
     expanded = g.mode === "cities-knights",
@@ -278,7 +295,7 @@ export function GameDice({ g }: { g: View }) {
           : tradeCity;
   return (
     <>
-      <div className="game-dice">
+      <div className="game-dice" ref={diceElement}>
         <div className="die-group">
           <NumberDie value={g.dice?.[0]} color={expanded ? "red" : "ivory"} />
           <small>{expanded ? "תוצאה + קלפים" : "תוצאה"}</small>
