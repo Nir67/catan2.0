@@ -222,6 +222,9 @@ test("seven/knight permits pirate instead of robber, steals from adjacent ships,
   assert.throws(() => act(g, { type: "move-robber", tileId: sea }));
   g = act(g, { type: "move-pirate", tileId: sea });
   assert.equal(g.pirate, sea);
+  assert.equal(g.stage, "steal");
+  assert.equal(g.players[1].resources.wood, 1);
+  g = act(g, { type: "steal", victimId: "b", cardIndex: 0 });
   assert.equal(g.stage, "action");
   assert.equal(g.players[1].resources.wood, 0);
   assert.ok(!shipLocations(g, "a").includes(coast.id));

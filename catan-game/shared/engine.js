@@ -471,6 +471,7 @@ function steal(g, p, victimId, rng) {
     if (pick < victim.resources[r]) {
       victim.resources[r]--;
       p.resources[r]++;
+      p.lastTheft = { id: g.revision + 1, resource: r, victimId };
       break;
     }
     pick -= victim.resources[r];
@@ -506,6 +507,15 @@ function perform(g, id, a, rng) {
     note(g, `${p.name} השליך/ה ${total(cards)} קלפים`);
     return;
   }
+  if (a.type === "reject-trade") {
+    check(g.stage === "action" && g.trade && g.trade.from !== id, "אין הצעת מסחר זמינה");
+    check(a.offerId === g.trade.id, "ההצעה השתנתה");
+    check(active.id === id || g.trade.from === active.id, "אפשר לסחור רק עם השחקן שבתורו");
+    g.tradeResponses ??= [];
+    g.tradeResponses = g.tradeResponses.filter(x => x.playerId !== id);
+    g.tradeResponses.push({ playerId: id, from: g.trade.from, status: "rejected", offerId: g.trade.id });
+    return;
+  }
   if (a.type === "accept-trade") {
     check(
       g.stage === "action" && g.trade && g.trade.from !== id,
@@ -529,6 +539,9 @@ function perform(g, id, a, rng) {
       from.resources[r] += offer.want[r] - offer.give[r];
       p.resources[r] += offer.give[r] - offer.want[r];
     }
+    g.tradeResponses ??= [];
+    g.tradeResponses = g.tradeResponses.filter(x => x.playerId !== id);
+    g.tradeResponses.push({ playerId: id, from: from.id, status: "accepted", offerId: offer.id });
     note(g, `${from.name} ו־${p.name} השלימו עסקה`);
     g.trade = null;
     return;
@@ -546,6 +559,7 @@ function perform(g, id, a, rng) {
       "אין להציע אותו משאב בשני הצדדים",
     );
     check(canPay(p.resources, giveCards), "אין לך את המשאבים המוצעים");
+    g.tradeResponses = [];
     g.trade = { id: g.revision + 1, from: id, give: giveCards, want };
     note(g, `${p.name} הציע/ה עסקה`);
     return;
@@ -628,13 +642,16 @@ function perform(g, id, a, rng) {
       )
       .map((v) => v.id);
     note(g, `${p.name} הזיז/ה את השודד`);
-    if (g.victims.length === 1) steal(g, p, g.victims[0], rng);
-    else if (g.victims.length) g.stage = "steal";
+    if (g.victims.length) g.stage = "steal";
     else finishRobber(g);
     return;
   }
   if (a.type === "steal") {
     check(g.stage === "steal", "אין אפשרות לגנוב כעת");
+    if (a.cardIndex !== undefined) {
+      const victim = g.players.find(x => x.id === a.victimId);
+      check(victim && Number.isInteger(a.cardIndex) && a.cardIndex >= 0 && a.cardIndex < total(victim.resources), "בחר קלף סגור תקין");
+    }
     steal(g, p, a.victimId, rng);
     return;
   }
@@ -705,6 +722,15 @@ function perform(g, id, a, rng) {
       1 + Math.floor(rng() * 6),
     ];
     delete g.chosenDice;
+    const sevenBlocked = g.turnNumber <= g.players.length * 3 || (g.sevenStreak ?? 0) >= 2;
+    if (sevenBlocked && g.dice[0] + g.dice[1] === 7) {
+      const allowed = [];
+      for (let first = 1; first <= 6; first++)
+        for (let second = 1; second <= 6; second++)
+          if (first + second !== 7) allowed.push([first, second]);
+      g.dice = allowed[Math.floor(rng() * allowed.length)];
+    }
+    g.sevenStreak = g.dice[0] + g.dice[1] === 7 ? (g.sevenStreak ?? 0) + 1 : 0;
     g.hasRolled = true;
     note(g, `${p.name} גלגל/ה ${g.dice[0] + g.dice[1]}`);
     if (g.mode === "cities-knights") expansionEvent(g, rng, expansionContext);
@@ -871,6 +897,7 @@ export function viewFor(g, id) {
     me: me
       ? {
           resources: { ...emptyHand(), ...me.resources },
+          lastTheft: me.lastTheft,
           improvements: me.improvements,
           progress: me.progress,
           development: structuredClone(me.development),

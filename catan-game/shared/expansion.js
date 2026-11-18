@@ -495,6 +495,7 @@ function progressEffect(g, p, a, rng, ctx) {
         a.dice.every((n) => Number.isInteger(n) && n >= 1 && n <= 6),
       "בחר שתי קוביות בין 1 ל־6",
     );
+    check(a.dice[0] + a.dice[1] !== 7 || (g.turnNumber > g.players.length * 3 && (g.sevenStreak ?? 0) < 2), "אי אפשר לבחור 7 בשלושת הסבבים הראשונים או אחרי שני גלגולי 7 רצופים");
     g.chosenDice = a.dice;
   } else if (type === "crane") {
     check(!g.crane, "מנוף כבר ממתין לשימוש");

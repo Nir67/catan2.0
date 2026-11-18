@@ -164,6 +164,7 @@ test("commodity shortages are independent of resources and robber blocks both", 
 });
 test("seven before first invasion discards commodities but leaves robber in desert, walls raise threshold", () => {
   let g = ready();
+  g.turnNumber = g.players.length * 3 + 1;
   stock(g, "a", Object.fromEntries(MATERIALS.map((r) => [r, 0])));
   stock(g, "a", { paper: 6, wood: 2, wheat: 1 });
   g = act(stock(g, "a", { brick: 2 }), {
@@ -330,6 +331,7 @@ test("city improvements, commodity costs, metropolis ownership and level-five th
 });
 test("aqueduct is a chosen resource for no production, never on a seven; trading house gives commodity 2:1", () => {
   let g = ready();
+  g.turnNumber = g.players.length * 3 + 1;
   g.players[0].improvements.science = 3;
   g.buildings = g.buildings.filter((b) => b.playerId !== "a");
   g = roll(g, 1, 1);
@@ -370,6 +372,7 @@ test("event/red die draws in turn order; public VP immediately revealed, off-tur
 });
 test("alchemist controls numbered dice but rolls event normally; ordinary dice injection is ignored", () => {
   let g = setup();
+  g.turnNumber = g.players.length * 3 + 1;
   g = play(g, "alchemist", { dice: [3, 4] });
   g = act(g, { type: "roll-dice" }, "a", () => 0.99);
   assert.deepEqual(g.dice, [3, 4]);

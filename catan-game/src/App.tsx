@@ -379,10 +379,10 @@ function Board({
               <HarborArt kind={port.resource} />
             </svg>
             <rect
-              x={x - 12}
+              x={x - 26}
               y={y + 15}
-              width="27"
-              height="13"
+              width="55"
+              height="18"
               rx="3"
               fill="#fff0cf"
               stroke="#94784e"
@@ -390,13 +390,13 @@ function Board({
             />
             <text
               x={x + 1.5}
-              y={y + 24.5}
+              y={y + 27}
               textAnchor="middle"
               fontSize="10"
               fontWeight="700"
               fill="#3e443a"
             >
-              {port.resource === "any" ? "3:1" : "2:1"}
+              {port.resource === "any" ? "כללי 3:1" : names[port.resource] + " 2:1"}
             </text>
           </g>
         );
@@ -463,16 +463,10 @@ function Board({
       {!disabled &&
         EDGES.filter((e) => roadIds.has(e.id)).map((edge, i) => {
           return (
-            <rect
+            <g
               key={edge.id}
-              x={edge.x - 27}
-              y={edge.y - 18}
-              width="54"
-              height="36"
-              rx="7"
-              fill="#fff4bd"
               transform={`rotate(${edge.angle} ${edge.x} ${edge.y})`}
-              className="target"
+              className="road-placement-target"
               role="button"
               tabIndex={0}
               aria-label={`${placement?.title || "בנה דרך"} ${i + 1}`}
@@ -491,7 +485,10 @@ function Board({
                     : { type: "build-road", edgeId: edge.id },
                 )
               }
-            />
+            >
+              <rect x={edge.x - 27} y={edge.y - 20} width="54" height="40" fill="transparent" />
+              <rect x={edge.x - 24} y={edge.y - 4} width="48" height="8" rx="4" fill="#fff4bd" className="target" pointerEvents="none" />
+            </g>
           );
         })}
       {!disabled &&
@@ -690,6 +687,7 @@ function TradeNotification({
     active = g.players[g.currentPlayerIndex].id;
   if (
     dismissed ||
+    (g.tradeResponses?.some(r => r.offerId === offer?.id && r.playerId === id && r.status === "rejected") ?? false) ||
     !offer ||
     offer.from === id ||
     g.stage !== "action" ||
@@ -738,7 +736,7 @@ function TradeNotification({
         >
           קבל עסקה
         </button>
-        <button onClick={() => setDismissed(true)}>לא מעוניין</button>
+        <button disabled={busy} onClick={() => { send({ type: "reject-trade", offerId: offer.id }); setDismissed(true); }}>לא מעוניין</button>
       </div>
     </section>
   );
@@ -987,6 +985,30 @@ function DiscardPanel({
     </section>
   );
 }
+function StealPicker({ g, send, busy }: { g: View; send: Send; busy: boolean }) {
+  const [victimId, setVictimId] = useState("");
+  const victim = g.players.find(p => p.id === victimId && g.victims.includes(p.id));
+  return <section className="panel urgent theft-picker">
+    <h2>{victim ? "בחר קלף סגור של " + victim.name : "ממי תרצה לגנוב?"}</h2>
+    {!victim ? g.victims.map(v => <button key={v} disabled={busy} onClick={() => setVictimId(v)}>{g.players.find(p => p.id === v)?.name}</button>) : <>
+      <p className="muted">הקלפים מוסתרים ומעורבבים. בחר קלף אחד.</p>
+      <div className="closed-cards">{Array.from({length: victim.resourceCount}, (_, i) => <button key={i} aria-label={"גנוב קלף סגור " + (i + 1)} disabled={busy} onClick={() => send({ type: "steal", victimId, cardIndex: i })}><span aria-hidden="true">?</span></button>)}</div>
+      <button disabled={busy} onClick={() => setVictimId("")}>בחר שחקן אחר</button>
+    </>}
+  </section>;
+}
+function GameFeedback({g, id}: {g: View; id: string}) {
+  const [hidden, setHidden] = useState("");
+  const theft = g.me.lastTheft;
+  const responses = (g.tradeResponses ?? []).filter(r => r.from === id);
+  const key = JSON.stringify([theft?.id, responses]);
+  if ((!theft && !responses.length) || hidden === key) return null;
+  return <section className="game-feedback" role="status">
+    <button aria-label="סגור עדכון" onClick={() => setHidden(key)}>×</button>
+    {responses.map(r => <p key={r.playerId}>{g.players.find(p => p.id === r.playerId)?.name} {r.status === "accepted" ? "אישר/ה את המסחר — העסקה הושלמה" : "דחה/תה את הצעת המסחר"}</p>)}
+    {theft && <p>קיבלת בגניבה: <strong>{names[theft.resource]}</strong> מ־{g.players.find(p => p.id === theft.victimId)?.name}</p>}
+  </section>;
+}
 function Game({
   g,
   room,
@@ -1060,7 +1082,7 @@ function Game({
     "expansion-choice": "יש להשלים את הבחירה המוצגת",
     discard: "ממתינים להשלכת קלפים מכל מי שמחזיק מעל 7",
     robber: "בחר משושה אחר כדי להזיז את השודד",
-    steal: "בחר ממי לגנוב קלף אקראי",
+    steal: "בחר ממי לגנוב ואז בחר קלף סגור",
     "road-building": `הצב עד ${g.freeRoads} דרכים ללא עלות`,
     "game-over": "המשחק הסתיים",
   };
@@ -1086,6 +1108,7 @@ function Game({
         send={send}
         busy={busy || !connected}
       />
+      <GameFeedback g={g} id={id} />
       <div className="players">
         {g.players.map((p) => (
           <details
@@ -1522,20 +1545,7 @@ function Game({
                 required={g.pendingDiscards[id]}
               />
             )}
-            {g.stage === "steal" && active && (
-              <section className="panel urgent">
-                <h2>בחר שחקן לגניבה</h2>
-                {g.victims.map((v) => (
-                  <button
-                    key={v}
-                    disabled={disabled}
-                    onClick={() => send({ type: "steal", victimId: v })}
-                  >
-                    {g.players.find((p) => p.id === v)?.name}
-                  </button>
-                ))}
-              </section>
-            )}
+            {g.stage === "steal" && active && <StealPicker key={g.turnNumber + "-" + g.robber + "-" + g.pirate} g={g} send={send} busy={disabled} />}
             {g.mode === "cities-knights" &&
               ["cities", "cards"].includes(tool) && (
                 <ExpansionPanel

@@ -1094,3 +1094,9 @@
   .is-playing .player-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .is-playing .account-content { position: fixed; z-index: 90; inset: 10% 5% auto; max-height: 65dvh; overflow: auto; }
 }
+.closed-cards { display: flex; gap: 7px; flex-wrap: wrap; margin: 12px 0; max-height: 180px; overflow: auto; }
+.closed-cards button { width: 44px; height: 66px; border: 3px double #dfc990; background: repeating-linear-gradient(45deg,#335c62,#335c62 4px,#294c52 4px,#294c52 8px); color: #f4dfaa; border-radius: 6px; font-size: 23px; }
+.theft-picker > button { margin: 4px; min-height: 44px; }
+.game-feedback { position: fixed; z-index: 100; top: 12px; left: 12px; width: min(360px, calc(100vw - 24px)); background: #fff7dd; color: #304f45; border: 1px solid #b49a5d; padding: 12px 18px; border-radius: 8px; box-shadow: 0 6px 30px #182f4133; }
+.game-feedback > button { float: left; border: 0; background: transparent; font-size: 22px; padding: 4px 9px; }
+.game-feedback p { font-size: 14px; }

@@ -128,11 +128,13 @@ export type View = {
   largestArmy: string | null;
   winner: string | null;
   trade: { id?: number; from: string; give: Hand; want: Hand } | null;
+  tradeResponses?: { playerId: string; from: string; status: "accepted" | "rejected"; offerId?: number }[];
   log: string[];
   revision: number;
   developmentRemaining: number;
   me: {
     resources: Hand;
+    lastTheft?: { id: number; resource: Resource; victimId: string };
     development: Development[];
     ratios: Hand;
     improvements?: Record<Track, number>;

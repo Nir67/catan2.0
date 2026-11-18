@@ -230,8 +230,7 @@ export function seaAction(g, p, a, rng, ctx) {
           ),
       )
       .map((x) => x.id);
-    if (g.victims.length === 1) ctx.steal(g, p, g.victims[0], rng);
-    else if (g.victims.length) g.stage = "steal";
+    if (g.victims.length) g.stage = "steal";
     else {
       g.stage = g.returnStage;
       g.victims = [];

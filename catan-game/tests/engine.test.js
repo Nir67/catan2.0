@@ -241,6 +241,7 @@ test("production for every player, city doubles, robber blocks", () => {
 });
 test("seven enforces all discards before moving robber and random theft", () => {
   let g = setup().g;
+  g.turnNumber = g.players.length * 3 + 1;
   stock(g, "a", 2);
   stock(g, "b", 2);
   g = act(
@@ -658,4 +659,52 @@ test("trade acceptance can bind to a visible offer and rejects a replaced offer 
     accepted.players[1].resources.wood,
     g.players[1].resources.wood + 2,
   );
+});
+test("trade rejection reports recipient decisions, preserves other recipients and rejects stale offers", () => {
+  let g = ready(); stock(g, "a", 3); stock(g, "b", 3);
+  const offer = { type: "offer-trade", give: { wood: 1 }, want: { brick: 1 } };
+  g = act(g, offer); const offerId = g.trade.id;
+  assert.throws(() => act(g, {type: "reject-trade", offerId}, "a"));
+  assert.throws(() => act(g, {type: "reject-trade", offerId: offerId - 1}, "b"));
+  const resources = structuredClone(g.players.map(p => p.resources));
+  g = act(g, {type: "reject-trade", offerId}, "b");
+  assert.deepEqual(g.players.map(p => p.resources), resources);
+  assert.equal(g.trade.id, offerId);
+  assert.equal(viewFor(g, "a").tradeResponses[0].status, "rejected");
+  g = act(g, offer); assert.deepEqual(g.tradeResponses, []);
+  assert.throws(() => act(g, {type: "reject-trade", offerId}, "b"));
+  g = act(g, {type: "accept-trade", offerId: g.trade.id}, "b");
+  assert.equal(g.trade, null); assert.equal(g.tradeResponses[0].status, "accepted");
+  conserve(g);
+});
+test("theft validates closed-card choices and reveals the resource only to the thief", () => {
+  let g = ready(); stock(g, "b", 2);
+  g.stage = "steal"; g.returnStage = "action"; g.victims = ["b"];
+  for (const cardIndex of [-1, 10000, 0.5]) assert.throws(() => act(g, {type:"steal", victimId:"b", cardIndex}));
+  assert.throws(() => act(g, {type:"steal", victimId:"c", cardIndex:0}));
+  const before = total(g.players[0].resources);
+  g = act(g, {type:"steal", victimId:"b", cardIndex:0}, "a", () => 0);
+  assert.equal(total(g.players[0].resources), before + 1);
+  assert.equal(viewFor(g, "a").me.lastTheft.resource, "wood");
+  assert.equal(viewFor(g, "b").me.lastTheft, undefined);
+  assert.equal(viewFor(g, "c").players[0].lastTheft, undefined);
+  assert.equal(g.stage, "action"); conserve(g);
+});
+test("seven is blocked for three complete rounds and never rolls three times consecutively", () => {
+  for (const count of [3, 4]) {
+    let g = createGame(players.concat(count === 4 ? [{id:"d",name:"d"}] : []));
+    g.stage = "pre-roll";
+    const rollSeven = () => { let i=0; return () => [0,0.99,0][i++ % 3]; };
+    for (let turn=1; turn<=count*3; turn++) {
+      g.turnNumber=turn;g.stage="pre-roll";g.hasRolled=false;
+      g=act(g,{type:"roll-dice"},"a",rollSeven());
+      assert.notEqual(g.dice[0]+g.dice[1],7);
+    }
+    for (let n=0;n<4;n++) {
+      g.turnNumber++;g.stage="pre-roll";g.hasRolled=false;
+      g=act(g,{type:"roll-dice"},"a",rollSeven());
+      assert.equal(g.dice[0]+g.dice[1]===7,n!==2);
+      assert.equal(g.sevenStreak,[1,2,0,1][n]);
+    }
+  }
 });
