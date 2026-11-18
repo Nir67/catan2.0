@@ -1026,6 +1026,7 @@ function Game({
 }) {
   const [zoomControls, setZoomControls] = useState<HTMLDivElement | null>(null);
   const [armyOpen, setArmyOpen] = useState(false);
+  const [rollRequest, setRollRequest] = useState(0);
   const [tool, setTool] = useState(""),
     [pick, setPick] = useState<(PickRequest & { turn: number }) | null>(null);
   const chooseOnBoard = (request: PickRequest) => {
@@ -1291,13 +1292,13 @@ function Game({
           <div className="action-dock">
           {!g.winner && (
             <section className="panel turn-controls">
-              <GameDice g={g} />
+              <GameDice g={g} rollRequest={rollRequest} />
               <div className="button-row">
                 {active && g.stage === "pre-roll" && (
                   <button
                     className="primary"
                     disabled={disabled}
-                    onClick={() => send({ type: "roll-dice" })}
+                    onClick={() => { setRollRequest(n => n + 1); send({ type: "roll-dice" }); }}
                   >
                     גלגל קוביות
                   </button>

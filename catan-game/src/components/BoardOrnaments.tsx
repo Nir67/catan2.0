@@ -2,7 +2,7 @@ import shipArt from "../assets/pieces/barbarian-ship.png";
 import scienceCity from "../assets/pieces/city-green.png";
 import politicsCity from "../assets/pieces/city-blue.png";
 import tradeCity from "../assets/pieces/city-yellow.png";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { View } from "../../shared/engine.js";
 import harbors from "../assets/pieces/harbors-atlas.png";
 export function HarborArt({ kind }: { kind: string }) {
@@ -260,26 +260,34 @@ function NumberDie({ value, color }: { value?: number; color: string }) {
     </svg>
   );
 }
-export function GameDice({ g }: { g: View }) {
-  const diceElement = useRef<HTMLDivElement>(null);
+export function GameDice({ g, rollRequest = 0 }: { g: View; rollRequest?: number }) {
+  const [frame, setFrame] = useState<number | null>(null);
   const rollKey = g.turnNumber + ":" + g.hasRolled;
-  const previousRoll = useRef(rollKey);
+  const previous = useRef({ rollKey, rollRequest });
   useEffect(() => {
-    const changed = previousRoll.current !== rollKey;
-    previousRoll.current = rollKey;
-    if (!changed || !g.hasRolled || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const animations = Array.from(diceElement.current?.querySelectorAll<SVGElement>(".game-die") ?? []).map((die, i) => die.animate([
-      { transform: "translateY(0) rotate(0deg) scale(1)" },
-      { transform: "translateY(-9px) rotate(-24deg) scale(.9)", offset: .16 },
-      { transform: "translateY(2px) rotate(125deg) scale(1.04)", offset: .4 },
-      { transform: "translateY(-6px) rotate(242deg) scale(.94)", offset: .64 },
-      { transform: "translateY(0) rotate(352deg) scale(1.03)", offset: .86 },
-      { transform: "translateY(0) rotate(360deg) scale(1)" },
-    ], { duration: 720 + i * 90, easing: "ease-out" }));
-    return () => animations.forEach(animation => animation.cancel());
-  }, [rollKey, g.hasRolled]);
+    const requested = previous.current.rollRequest !== rollRequest;
+    const received = previous.current.rollKey !== rollKey && g.hasRolled;
+    previous.current = { rollKey, rollRequest };
+    if (!requested && !received) {
+      const reset = window.setTimeout(() => setFrame(null), 0);
+      return () => window.clearTimeout(reset);
+    }
+    let tick = 0;
+    const start = window.setTimeout(() => setFrame(0), 0);
+    const interval = window.setInterval(() => setFrame(++tick), 85);
+    const stop = window.setTimeout(() => {
+      window.clearInterval(interval);
+      setFrame(null);
+    }, 1150);
+    return () => {
+      window.clearTimeout(start);
+      window.clearInterval(interval);
+      window.clearTimeout(stop);
+    };
+  }, [rollKey, rollRequest, g.hasRolled]);
+  const rolling = frame !== null;
   const id = useId(),
-    event = g.eventDie,
+    event = rolling ? ["science", "barbarians", "politics", "trade"][(frame ?? 0) % 4] : g.eventDie,
     expanded = g.mode === "cities-knights",
     names: Record<string, string> = {
       barbarians: "ספינת ברברים",
@@ -295,14 +303,14 @@ export function GameDice({ g }: { g: View }) {
           : tradeCity;
   return (
     <>
-      <div className="game-dice" ref={diceElement}>
+      <div className={"game-dice" + (rolling ? " rolling" : "")} aria-busy={rolling}>
         <div className="die-group">
-          <NumberDie value={g.dice?.[0]} color={expanded ? "red" : "ivory"} />
+          <NumberDie value={rolling ? ((frame ?? 0) * 5 + 2) % 6 + 1 : g.dice?.[0]} color={expanded ? "red" : "ivory"} />
           <small>{expanded ? "תוצאה + קלפים" : "תוצאה"}</small>
         </div>
         <div className="die-group">
           <NumberDie
-            value={g.dice?.[1]}
+            value={rolling ? ((frame ?? 0) * 5 + 4) % 6 + 1 : g.dice?.[1]}
             color={expanded ? "yellow" : "ivory"}
           />
           <small>תוצאה</small>
@@ -380,7 +388,7 @@ export function GameDice({ g }: { g: View }) {
           </div>
         )}
         <b>
-          {g.hasRolled && g.dice
+          {rolling ? "מגלגלים…" : g.hasRolled && g.dice
             ? `סכום ${g.dice[0] + g.dice[1]}`
             : "לפני גלגול"}
         </b>

@@ -1100,3 +1100,13 @@
 .game-feedback { position: fixed; z-index: 100; top: 12px; left: 12px; width: min(360px, calc(100vw - 24px)); background: #fff7dd; color: #304f45; border: 1px solid #b49a5d; padding: 12px 18px; border-radius: 8px; box-shadow: 0 6px 30px #182f4133; }
 .game-feedback > button { float: left; border: 0; background: transparent; font-size: 22px; padding: 4px 9px; }
 .game-feedback p { font-size: 14px; }
+.game-dice.rolling .game-die { animation: dice-tumble 380ms ease-in-out infinite; transform-origin: center; }
+.game-dice.rolling .die-group:nth-child(2) .game-die { animation-delay: -120ms; animation-direction: reverse; }
+.game-dice.rolling .die-group:nth-child(3) .game-die { animation-delay: -240ms; }
+@keyframes dice-tumble {
+  0%, 100% { transform: translateY(0) rotate(-12deg) scale(.94); }
+  50% { transform: translateY(-8px) rotate(20deg) scale(1.06); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-dice.rolling .game-die { animation: none; }
+}
