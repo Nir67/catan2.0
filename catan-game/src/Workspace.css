@@ -1029,3 +1029,68 @@
     margin: 0;
   }
 }
+.action-dock { display: contents; }
+@media (max-width: 899px) {
+  .app.is-playing { padding-bottom: calc(155px + env(safe-area-inset-bottom)); }
+  .is-playing .action-dock {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    z-index: 60;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 5px max(8px, env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    background: #f2efe3;
+    box-shadow: 0 -3px 15px #182f4125;
+    gap: 4px;
+  }
+  .is-playing .action-dock .turn-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+    margin: 0;
+  }
+  .action-dock .game-dice { margin: 0; }
+  .action-dock .dice-roles, .action-dock .turn-controls > .muted { display: none; }
+  .action-dock .game-dice .game-die { width: 32px; height: 34px; }
+  .action-dock .die-group { min-width: 34px; }
+  .is-playing .tool-tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 3px; }
+  .is-playing .tool-tabs button, .action-dock .button-row button { min-height: 44px; }
+  .is-playing .tool-scroll {
+    position: fixed;
+    z-index: 55;
+    bottom: calc(136px + env(safe-area-inset-bottom));
+    left: 8px;
+    right: 8px;
+    max-height: 42dvh;
+    border-radius: 8px;
+    background: #f2efe3;
+    box-shadow: 0 -5px 22px #182f4120;
+  }
+  .is-playing .board-area .board-viewport { min-height: 310px; height: 48dvh; }
+  .is-playing .side-zoom .zoom-buttons button { width: 44px; height: 44px; }
+  .is-playing .side-zoom .zoom-reset { min-height: 44px; }
+  .is-playing input, .is-playing select, .entry input { font-size: 16px; }
+  .trade-notification { bottom: calc(150px + env(safe-area-inset-bottom)); max-height: 60dvh; overflow: auto; }
+  .army-popover { bottom: calc(150px + env(safe-area-inset-bottom)); z-index: 70; }
+}
+@media (max-width: 899px) and (orientation: landscape) {
+  .is-playing .board-area { flex-direction: row; }
+  .is-playing .board-status { width: 170px; flex-direction: column; }
+  .is-playing .board-area .board-viewport { height: 65dvh; min-height: 240px; }
+  .is-playing .tool-scroll { max-height: 55dvh; left: auto; width: min(360px, 60vw); }
+}
+@media (max-width: 899px) {
+  .is-playing .topbar { padding: 6px 0; margin-bottom: 4px; gap: 6px; }
+  .is-playing .brand { font-size: 24px; }
+  .is-playing .account-strip { padding: 5px 8px; min-height: 36px; }
+  .is-playing .account-strip button { padding: 6px; }
+  .is-playing .account-avatar { width: 25px; height: 25px; }
+  .is-playing .players { display: flex; flex-wrap: nowrap; gap: 4px; }
+  .is-playing .player-card { flex: 1; min-width: 0; padding: 5px; }
+  .is-playing .player-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .is-playing .account-content { position: fixed; z-index: 90; inset: 10% 5% auto; max-height: 65dvh; overflow: auto; }
+}

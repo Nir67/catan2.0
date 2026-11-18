@@ -104,3 +104,6 @@
     min-height: 38px;
   }
 }
+@media (pointer: coarse) {
+  .board-viewport { touch-action: none; }
+}

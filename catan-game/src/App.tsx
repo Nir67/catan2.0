@@ -465,10 +465,10 @@ function Board({
           return (
             <rect
               key={edge.id}
-              x={edge.x - 24}
-              y={edge.y - 7}
-              width="48"
-              height="14"
+              x={edge.x - 27}
+              y={edge.y - 18}
+              width="54"
+              height="36"
               rx="7"
               fill="#fff4bd"
               transform={`rotate(${edge.angle} ${edge.x} ${edge.y})`}
@@ -500,7 +500,7 @@ function Board({
             key={v.id}
             cx={v.x}
             cy={v.y}
-            r="11"
+            r="20"
             fill="#fff5cc"
             stroke="#d28c22"
             strokeWidth="3"
@@ -1265,6 +1265,7 @@ function Game({
           </section>
         </main>
         <aside className="sidebar">
+          <div className="action-dock">
           {!g.winner && (
             <section className="panel turn-controls">
               <GameDice g={g} />
@@ -1320,6 +1321,7 @@ function Game({
               </button>
             ))}
           </nav>
+          </div>
           <div className="tool-scroll" data-tool={tool}>
             {g.seafarers && (
               <div className="tool-build">

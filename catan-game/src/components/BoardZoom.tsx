@@ -45,6 +45,8 @@ export function BoardZoom({
     units: number;
     captured: boolean;
   } | null>(null);
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ distance: number; camera: Camera } | null>(null);
   const moved = useRef(false),
     base = bounds(seafarers);
   const width = base.width / camera.zoom,
@@ -79,6 +81,17 @@ export function BoardZoom({
   }, [seafarers]);
   function down(event: PointerEvent<HTMLDivElement>) {
     moved.current = false;
+    if (event.pointerType === "touch") {
+      touches.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touches.current.size === 2) {
+        const [a, b] = [...touches.current.values()];
+        pinch.current = { distance: Math.hypot(a.x - b.x, a.y - b.y), camera };
+        drag.current = null;
+        moved.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
+    }
     if (camera.zoom <= 1 || event.button !== 0 || !event.isPrimary) return;
     const svg = viewport.current?.querySelector("svg"),
       rect = svg?.getBoundingClientRect();
@@ -93,6 +106,18 @@ export function BoardZoom({
     };
   }
   function move(event: PointerEvent<HTMLDivElement>) {
+    if (touches.current.has(event.pointerId)) {
+      touches.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pinch.current && touches.current.size === 2) {
+        const [a, b] = [...touches.current.values()];
+        if (pinch.current.distance > 0) {
+          event.preventDefault();
+          moved.current = true;
+          setCamera(constrain({ ...pinch.current.camera, zoom: pinch.current.camera.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.current.distance }, seafarers));
+        }
+        return;
+      }
+    }
     const start = drag.current;
     if (!start || event.pointerId !== start.pointer) return;
     const dx = event.clientX - start.x,
@@ -117,6 +142,14 @@ export function BoardZoom({
     );
   }
   function up(event: PointerEvent<HTMLDivElement>) {
+    touches.current.delete(event.pointerId);
+    if (pinch.current) {
+      pinch.current = null;
+      drag.current = null;
+      moved.current = true;
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
     if (drag.current?.pointer !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -188,7 +221,7 @@ export function BoardZoom({
       <button type="button" className="zoom-reset" onClick={reset}>
         הצג את כל הלוח
       </button>
-      <small>בהגדלה אפשר לגרור · Ctrl + גלגלת</small>
+      <small>צביטה להגדלה · גרירה להזזה · Ctrl + גלגלת</small>
     </div>
   );
   return (
