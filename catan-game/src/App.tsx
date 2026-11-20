@@ -1933,7 +1933,7 @@ function App() {
                 {p.name}
                 {p.id === id ? " (אתה)" : ""}
                 {p.id === room.hostId ? " · מארח" : ""}
-                {p.botDifficulty ? " · מחשב" : p.accountId ? " · חשבון מחובר" : " · אורח"}
+                {p.botDifficulty ? " · מחשב · רמה " + ({ easy: "קלה", medium: "בינונית", hard: "קשה" }[p.botDifficulty]) : p.accountId ? " · חשבון מחובר" : " · אורח"}
                 {p.botDifficulty && room.hostId === id && <button disabled={busy} onClick={() => request("remove-bot", { playerId: p.id })}>הסר בוט</button>}
                 <span className="muted">{p.online ? "מחובר" : "לא מחובר"}</span>
               </li>

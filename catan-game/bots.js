@@ -1,5 +1,10 @@
 import { applyAction, viewFor, boardFor, COSTS, MATERIALS, RESOURCES, total, canPay } from "./shared/engine.js";
 
+const BOT_NAMES = ["נועם", "מאיה", "איתי", "תמר", "עידו", "אלה", "יובל", "שירה", "אורי", "דניאל", "רוני", "אייל", "ליה", "אדם", "יעל", "עומר"];
+export function botName(players, rng = Math.random) {
+  const available = BOT_NAMES.filter(name => !players.some(p => p.name === name));
+  return available[Math.floor(rng() * available.length)];
+}
 export const BOT_LEVELS = { easy: "קל", medium: "בינוני", hard: "קשה" };
 export function botActor(room) {
   const g = room.game;

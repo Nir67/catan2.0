@@ -1,4 +1,4 @@
-import { BOT_LEVELS, botActor, chooseBotAction } from "./bots.js";
+import { BOT_LEVELS, botName, botActor, chooseBotAction } from "./bots.js";
 import { Accounts, newAccountState } from "./accounts.js";
 import express from "express";
 import { createServer } from "node:http";
@@ -38,6 +38,13 @@ function hydrate(data) {
   if (!data) return;
   if (data.version !== 1) throw Error("Unsupported save version");
   rooms = new Map(data.rooms);
+  for (const room of rooms.values()) for (const p of room.players) {
+    if (p.botDifficulty && /^מחשב \d+ · (קל|בינוני|קשה)$/.test(p.name)) {
+      p.name = botName(room.players, () => 0);
+      const seat = room.game?.players.find(player => player.id === p.id);
+      if (seat) seat.name = p.name;
+    }
+  }
   identities = new Map([...data.identities, ...identities]);
   accounts.state = data.accounts || newAccountState();
 }
@@ -420,7 +427,7 @@ io.on("connection", (socket) => {
     assert(room.hostId === socket.data.playerId && !room.game, "רק המארח יכול להוסיף בוט לפני תחילת המשחק");
     assert(Object.hasOwn(BOT_LEVELS, difficulty), "בחר רמת קושי חוקית");
     assert(room.players.length < 4, "בחדר יש כבר ארבעה שחקנים");
-    const bot = { id: "bot-" + randomUUID(), name: "מחשב " + (room.players.filter(p => p.botDifficulty).length + 1) + " · " + BOT_LEVELS[difficulty], botDifficulty: difficulty };
+    const bot = { id: "bot-" + randomUUID(), name: botName(room.players), botDifficulty: difficulty };
     await saveRoom(code, { ...room, ranked: false, players: [...room.players, bot] });
     return {};
   });
