@@ -109,6 +109,7 @@ type Room = {
     color: Color;
     online: boolean;
     accountId?: string | null;
+    botDifficulty?: "easy" | "medium" | "hard";
   }[];
 };
 type Action = { type: string; [key: string]: unknown };
@@ -1660,6 +1661,7 @@ function App() {
     () => localStorage.getItem("catan-last-room") || "",
   );
   const [showCards, setShowCards] = useState(false);
+  const [botDifficulty, setBotDifficulty] = useState("medium");
   const [account, setAccount] = useState<Profile | null>(null);
   const [mode, setMode] = useState<Room["mode"]>("base");
   const [ranked, setRanked] = useState(false);
@@ -1873,6 +1875,7 @@ function App() {
             >
               צור משחק
             </button>
+            <p className="muted">רוצה לשחק נגד המחשב? צור משחק והוסף בוטים בלובי.</p>
             <div className="divider">או הצטרפו לחברים</div>
             <label>
               קוד חדר
@@ -1901,7 +1904,7 @@ function App() {
           <p>שתפו את הקוד עם החברים</p>
           <RankedChoice
             ranked={!!room.ranked}
-            disabled={busy || room.hostId !== id}
+            disabled={busy || room.hostId !== id || room.players.some(p => !!p.botDifficulty)}
             onChange={(ranked) =>
               request("set-mode", { mode: room.mode, ranked })
             }
@@ -1930,12 +1933,17 @@ function App() {
                 {p.name}
                 {p.id === id ? " (אתה)" : ""}
                 {p.id === room.hostId ? " · מארח" : ""}
-                {p.accountId ? " · חשבון מחובר" : " · אורח"}
+                {p.botDifficulty ? " · מחשב" : p.accountId ? " · חשבון מחובר" : " · אורח"}
+                {p.botDifficulty && room.hostId === id && <button disabled={busy} onClick={() => request("remove-bot", { playerId: p.id })}>הסר בוט</button>}
                 <span className="muted">{p.online ? "מחובר" : "לא מחובר"}</span>
               </li>
             ))}
           </ul>
-          <p>שני המצבים מיועדים ל־3–4 שחקנים. כל שחקן מצטרף מחלון נפרד.</p>
+          <p>אפשר לשחק לבד נגד שני בוטים, או להוסיף בוט למשחק עם חבר. משחק עם בוטים אינו מדורג.</p>
+          {room.hostId === id && <div className="bot-controls">
+            <label>רמת המחשב <select aria-label="רמת המחשב" value={botDifficulty} onChange={e => setBotDifficulty(e.target.value)} disabled={busy}><option value="easy">קל</option><option value="medium">בינוני</option><option value="hard">קשה</option></select></label>
+            <button disabled={busy || room.players.length >= 4} onClick={() => request("add-bot", { difficulty: botDifficulty })}>הוסף בוט</button>
+          </div>}
           {room.hostId === id ? (
             <button
               className="primary"

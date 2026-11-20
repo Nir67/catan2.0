@@ -1,3 +1,4 @@
+import { BOT_LEVELS, botActor, chooseBotAction } from "./bots.js";
 import { Accounts, newAccountState } from "./accounts.js";
 import express from "express";
 import { createServer } from "node:http";
@@ -78,7 +79,7 @@ function emitRoom(code, room) {
     players: room.players.map((p, i) => ({
       ...p,
       color: COLORS[i],
-      online: !p.left && online(p.id),
+      online: !p.left && (!!p.botDifficulty || online(p.id)),
     })),
     started: !!room.game,
     ranked: !!room.ranked,
@@ -404,6 +405,7 @@ io.on("connection", (socket) => {
       ranked === undefined || typeof ranked === "boolean",
       "בחר משחק מדורג או משחק חברים",
     );
+    assert(!ranked || !room.players.some(p => p.botDifficulty), "משחק עם בוטים אינו מדורג");
     await saveRoom(code, {
       ...room,
       mode,
@@ -413,18 +415,34 @@ io.on("connection", (socket) => {
     });
     return {};
   });
+  on("add-bot", async ({ difficulty }) => {
+    const [code, room] = roomFor(socket);
+    assert(room.hostId === socket.data.playerId && !room.game, "רק המארח יכול להוסיף בוט לפני תחילת המשחק");
+    assert(Object.hasOwn(BOT_LEVELS, difficulty), "בחר רמת קושי חוקית");
+    assert(room.players.length < 4, "בחדר יש כבר ארבעה שחקנים");
+    const bot = { id: "bot-" + randomUUID(), name: "מחשב " + (room.players.filter(p => p.botDifficulty).length + 1) + " · " + BOT_LEVELS[difficulty], botDifficulty: difficulty };
+    await saveRoom(code, { ...room, ranked: false, players: [...room.players, bot] });
+    return {};
+  });
+  on("remove-bot", async ({ playerId }) => {
+    const [code, room] = roomFor(socket);
+    assert(room.hostId === socket.data.playerId && !room.game, "רק המארח יכול להסיר בוט לפני תחילת המשחק");
+    assert(room.players.some(p => p.id === playerId && p.botDifficulty), "הבוט אינו בחדר");
+    await saveRoom(code, { ...room, players: room.players.filter(p => p.id !== playerId) });
+    return {};
+  });
   on("start-game", async () => {
     const [code, room] = roomFor(socket);
     assert(room.hostId === socket.data.playerId, "רק המארח יכול להתחיל");
     assert(!room.game, "המשחק כבר התחיל");
     assert(
-      room.players.every((p) => online(p.id)),
+      room.players.every((p) => p.botDifficulty || online(p.id)),
       "כל השחקנים צריכים להיות מחוברים",
     );
     await saveRoom(code, {
       ...room,
       matchId: randomUUID(),
-      ranked: !!room.ranked,
+      ranked: !!room.ranked && !room.players.some(p => p.botDifficulty),
       game: createGame(room.players, Math.random, {
         mode: room.mode || "base",
         seafarers: !!room.seafarers,
@@ -456,13 +474,13 @@ io.on("connection", (socket) => {
       return {};
     }
     const players = room.players.filter((p) => p.id !== socket.data.playerId);
-    if (players.length)
+    if (players.some(p => !p.botDifficulty))
       await saveRoom(code, {
         ...room,
         players,
         hostId: players.some((p) => p.id === room.hostId)
           ? room.hostId
-          : players[0].id,
+          : players.find(p => !p.botDifficulty).id,
       });
     else {
       rooms.delete(code);
@@ -478,6 +496,22 @@ io.on("connection", (socket) => {
     if (entry) emitRoom(...entry);
   });
 });
+let botTickPending = false;
+let botRoomCursor = 0;
+setInterval(() => {
+  if (botTickPending || ![...rooms.values()].some(room => room.game && !room.game.winner && room.players.some(p => !p.botDifficulty && !p.left && online(p.id)) && botActor(room))) return;
+  botTickPending = true;
+  operations = operations.then(async () => {
+    if (storage.remote) hydrate(await storage.load());
+    const eligible = [...rooms].filter(([, room]) => room.game && !room.game.winner && room.players.some(p => !p.botDifficulty && !p.left && online(p.id)) && botActor(room));
+    if (!eligible.length) return;
+    const [code, room] = eligible[botRoomCursor++ % eligible.length];
+    const bot = botActor(room);
+    const action = chooseBotAction(room.game, bot.id, bot.botDifficulty);
+    if (action) await saveRoom(code, { ...room, game: applyAction(room.game, bot.id, action) });
+    else console.error("Bot has no legal action", code, room.game.stage);
+  }).catch(error => console.error("Bot turn failed", error.message)).finally(() => { botTickPending = false; });
+}, Number(process.env.CATAN_BOT_DELAY_MS) || 900).unref();
 app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 const clientDist = resolve(dirname(fileURLToPath(import.meta.url)), "dist");
 if (existsSync(resolve(clientDist, "index.html")))
